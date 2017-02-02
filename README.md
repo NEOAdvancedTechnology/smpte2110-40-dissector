@@ -5,6 +5,7 @@ Lua Dissector for ST 2110-40 in Wireshark
 Author: Thomas Edwards (thomas.edwards@fox.com)
 
 to use in Wireshark:
+
 1) Ensure your Wireshark works with Lua plugins - "About Wireshark" should say it is compiled with Lua
 
 2) Install this dissector in the proper plugin directory - see "About Wireshark/Folders" to see Personal
