@@ -6,12 +6,17 @@ Author: Thomas Edwards (thomas.edwards@fox.com)
 
 to use in Wireshark:
 1) Ensure your Wireshark works with Lua plugins - "About Wireshark" should say it is compiled with Lua
+
 2) Install this dissector in the proper plugin directory - see "About Wireshark/Folders" to see Personal
     and Global plugin directories.  After putting this dissector in the proper folder, "About Wireshark/Plugins"
     should list "ST-2110_40.lua" 
+    
 3) In Wireshark Preferences, under "Protocols", set st_2110_40 as dynamic payload type being used
+
 4) Capture packets of ST 2110_40
+
 5) "Decode As" those UDP packets as RTP
+
 6) You will now see the ST 2110_40 Data dissection of the RTP payload
 
 This program is free software; you can redistribute it and/or
