@@ -40,7 +40,8 @@ do
     F.HO=ProtoField.uint16("st_2110_40.HO","Horizontal_Offset",base.DEC,nil,0x0FFF)
     F.DID=ProtoField.uint16("st_2110_40.DID","DID",base.HEX,nil,0x3FC0)
     F.SDID=ProtoField.uint16("st_2110_40.SDID","SDID",base.HEX,nil,0x0FF0)
-    F.UDW=ProtoField.bytes("smpte_2022_6.UDW","User_Data_Words")
+    F.UDW=ProtoField.bytes("st_2110_40.UDW","User_Data_Words_bits")
+    F.Checksum_Word=ProtoField.bytes("st_2110_40.Checksum_Word","Checksum_Word_bits")
 
     function st_2110_40.dissector(tvb, pinfo, tree)
         local subtree = tree:add(st_2110_40, tvb(),"ST 2110_40 Data")  
@@ -50,6 +51,8 @@ do
 	local ANC_Count=tvb(4,1):uint()
 	local Data_Count=0
 	local offset=8
+	local CS_offset=0
+	local CS_length=2
 	for i=1,ANC_Count do
 		subtree:add(F.C,tvb(offset,1))
 		subtree:add(F.Line_Number,tvb(offset,2))
@@ -58,9 +61,21 @@ do
 		subtree:add(F.SDID,tvb(offset+5,2))
 		subtree:add(F.Data_Count,tvb(offset+6,2))
 		Data_Count=tvb(offset+6,2):bitfield(6,8)
-		subtree:add(F.UDW,tvb(offset+7,math.ceil((Data_Count*10)/8)))
+		local UDW_length=1+math.ceil(((Data_Count*10)-2)/8)
+		subtree:add(F.UDW,tvb(offset+7,UDW_length))
+		CS_offset=0
+		CS_length=2
+		UDW_bits=(Data_Count*10)-2
+		if (UDW_bits % 8 == 0) then
+			CS_offset = 1 
+		else
+			CS_offset=0
+		end
+		if (UDW_bits % 8 == 7) then
+			CS_length=3
+		end
+		subtree:add(F.Checksum_Word,tvb(offset+6+UDW_length+CS_offset,CS_length))
 		offset=offset+(math.ceil((62+(Data_Count*10)+8)/32)*4)
-		subtree:append_text("--DEBUG: would skip "..(math.ceil((62+(Data_Count*10)+8)/32)*4).." bytes to next ANC packet")
 	end
     end  
   
