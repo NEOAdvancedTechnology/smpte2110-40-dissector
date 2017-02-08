@@ -1,4 +1,5 @@
--- Lua Dissector for ST 2110-40
+-- Lua Dissector for SMPTE ST 2110-40
+-- (which references IETF draft-ietf-payload-rtp-ancillary-07)
 -- Author: Thomas Edwards (thomas.edwards@fox.com)
 --
 -- to use in Wireshark:
@@ -40,8 +41,8 @@ do
     F.HO=ProtoField.uint16("st_2110_40.HO","Horizontal_Offset",base.DEC,nil,0x0FFF)
     F.DID=ProtoField.uint16("st_2110_40.DID","DID",base.HEX,nil,0x3FC0)
     F.SDID=ProtoField.uint16("st_2110_40.SDID","SDID",base.HEX,nil,0x0FF0)
-    F.UDW=ProtoField.bytes("st_2110_40.UDW","User_Data_Words_bits")
-    F.Checksum_Word=ProtoField.bytes("st_2110_40.Checksum_Word","Checksum_Word_bits")
+    F.UDW=ProtoField.bytes("st_2110_40.UDW","User_Data_Words_bytes")
+    F.Checksum_Word=ProtoField.bytes("st_2110_40.Checksum_Word","Checksum_Word_bytes")
 
 -- DID / SDID info from https://smpte-ra.org/smpte-ancillary-data-smpte-st-291 as per 7 Feb 2017
 
