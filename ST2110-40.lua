@@ -1,5 +1,5 @@
 -- Lua Dissector for SMPTE ST 2110-40
--- (which references IETF draft-ietf-payload-rtp-ancillary-07)
+-- (which references IETF draft-ietf-payload-rtp-ancillary-08)
 -- Author: Thomas Edwards (thomas.edwards@fox.com)
 --
 -- to use in Wireshark:
@@ -35,6 +35,8 @@ do
     F.ESN = ProtoField.uint16("st_2110_40.ExtendedSequenceNumber","Extended Sequence Number",base.HEX,nil)
     F.Length = ProtoField.uint16("st_2110_40.Length","Length",base.DEC,nil)
     F.ANC_Count = ProtoField.uint8("st_2110_40.ANC_Count","ANC_Count",base.DEC,nil)
+    local VALS_F = {[0] = "unspecified or progressive scan", [1] = "not valid",[2] = "Field 1",[3]="Field 2"}
+    F.F = ProtoField.uint8("st_2110_40.F","(F)ield",base.DEC,VALS_F,0xC0)
     F.C = ProtoField.bool("st_2110_40.C","C",8,{"C:Color-difference","Y:Luma"},0x80)
     F.Data_Count = ProtoField.uint16("st_2110_40.Data_Count","Data_Count",base.DEC,nil,0x03FC)
     F.Line_Number = ProtoField.uint16("st_2110_40.Line_Number","Line_Number",base.DEC,nil,0x7FF0)
@@ -153,6 +155,7 @@ do
 	subtree:add(F.Length, tvb(2,2))
    	subtree:add(F.ANC_Count, tvb(4,1)) 
 	local ANC_Count=tvb(4,1):uint()
+	subtree:add(F.F,tvb(5,1))
 	local Data_Count=0
 	local offset=8
 	local CS_offset=0
