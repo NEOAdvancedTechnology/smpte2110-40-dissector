@@ -146,6 +146,9 @@ do
 
     function st_2110_40.dissector(tvb, pinfo, tree)
         local subtree = tree:add(st_2110_40, tvb(),"ST 2110_40 Data")  
+---
+--- Read ANC RTP payload header
+---
         subtree:add(F.ESN, tvb(0,2))
 	subtree:add(F.Length, tvb(2,2))
    	subtree:add(F.ANC_Count, tvb(4,1)) 
@@ -157,6 +160,9 @@ do
 	local DID
 	local SDID
 	local SDID_proto
+---
+--- Read ANC packets in payload
+---
 	for i=1,ANC_Count do
 		subtree:add(F.C,tvb(offset,1))
 		subtree:add(F.Line_Number,tvb(offset,2))
@@ -187,7 +193,10 @@ do
 			CS_length=3
 		end
 		subtree:add(F.Checksum_Word,tvb(offset+6+UDW_length+CS_offset,CS_length))
-		offset=offset+(math.ceil((62+(Data_Count*10)+8)/32)*4)
+---
+--- C,Line_Number,Horizontal_Offset,reserved,DID,SDID,Data_Count,Checksum_Word=72 
+---
+		offset=offset+(math.ceil((72+(Data_Count*10)+8)/32)*4)
 	end
     end  
   
