@@ -36,8 +36,8 @@ do
     F.Length = ProtoField.uint16("st_2110_40.Length","Length",base.DEC,nil)
     F.ANC_Count = ProtoField.uint8("st_2110_40.ANC_Count","ANC_Count",base.DEC,nil)
     local VALS_F = {[0] = "unspecified or progressive scan", [1] = "not valid",[2] = "Field 1",[3]="Field 2"}
-    F.F = ProtoField.uint8("st_2110_40.F","(F)ield",base.DEC,VALS_F,0xC0)
-    F.C = ProtoField.bool("st_2110_40.C","C",8,{"C:Color-difference","Y:Luma"},0x80)
+    F.F = ProtoField.uint8("st_2110_40.F","(F)ield",base.HEX,VALS_F,0xC0)
+    F.C = ProtoField.bool("st_2110_40.C","(C) or Y",8,{"C:Color-difference","Y:Luma"},0x80)
     F.Data_Count = ProtoField.uint16("st_2110_40.Data_Count","Data_Count",base.DEC,nil,0x03FC)
     F.Line_Number = ProtoField.uint16("st_2110_40.Line_Number","Line_Number",base.DEC,nil,0x7FF0)
     F.HO=ProtoField.uint16("st_2110_40.HO","Horizontal_Offset",base.DEC,nil,0x0FFF)
