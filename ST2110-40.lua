@@ -1,12 +1,12 @@
 -- Lua Dissector for SMPTE ST 2110-40
--- (which references IETF draft-ietf-payload-rtp-ancillary-08)
+-- (which references RFC 8331)
 -- Author: Thomas Edwards (thomas.edwards@fox.com)
 --
 -- to use in Wireshark:
 -- 1) Ensure your Wireshark works with Lua plugins - "About Wireshark" should say it is compiled with Lua
 -- 2) Install this dissector in the proper plugin directory - see "About Wireshark/Folders" to see Personal
 --    and Global plugin directories.  After putting this dissector in the proper folder, "About Wireshark/Plugins"
---    should list "ST-2110_40.lua" 
+--    should list "ST-2110_40.lua"
 -- 3) In Wireshark Preferences, under "Protocols", set st_2110_40 as dynamic payload type being used
 -- 4) Capture packets of ST 2110_40
 -- 5) "Decode As" those UDP packets as RTP
@@ -23,13 +23,13 @@
 -- GNU General Public License for more details.
 --
 --
-------------------------------------------------------------------------------------------------  
-do  
-    local st_2110_40 = Proto("st_2110_40", "ST 2110_40")  
-     
-    local prefs = st_2110_40.prefs  
-    prefs.dyn_pt = Pref.uint("ST 2110_40 dynamic payload type", 0, "The value > 95")  
- 
+------------------------------------------------------------------------------------------------
+do
+    local st_2110_40 = Proto("st_2110_40", "ST 2110_40")
+
+    local prefs = st_2110_40.prefs
+    prefs.dyn_pt = Pref.uint("ST 2110_40 dynamic payload type", 0, "The value > 95")
+
     local F = st_2110_40.fields
 
     F.ESN = ProtoField.uint16("st_2110_40.ExtendedSequenceNumber","Extended Sequence Number",base.HEX,nil)
@@ -41,15 +41,32 @@ do
     F.Data_Count = ProtoField.uint16("st_2110_40.Data_Count","Data_Count",base.DEC,nil,0x03FC)
     F.Line_Number = ProtoField.uint16("st_2110_40.Line_Number","Line_Number",base.DEC,nil,0x7FF0)
     F.HO=ProtoField.uint16("st_2110_40.HO","Horizontal_Offset",base.DEC,nil,0x0FFF)
+    F.S = ProtoField.bool("st_2110_40.S","S",8,{"StreamNum used","StreamNum not used"},0x80)
+    F.StreamNum = ProtoField.uint8("st_2110_40.StreamNum","StreamNum",base.DEC,nil,0x7F)
     F.DID=ProtoField.uint16("st_2110_40.DID","DID",base.HEX,nil,0x3FC0)
     F.SDID=ProtoField.uint16("st_2110_40.SDID","SDID",base.HEX,nil,0x0FF0)
     F.UDW=ProtoField.bytes("st_2110_40.UDW","User_Data_Words_bytes")
     F.Checksum_Word=ProtoField.bytes("st_2110_40.Checksum_Word","Checksum_Word_bytes")
 
+-- Line_Number codes
+
+    local LNC={}
+    LNC[0x7ff]="Without specific line location within the field or frame"
+    LNC[0x7fe]="Line between 2nd line after RP 168 switch line to the last line before active video"
+    LNC[0x7fd]="Line number larger than can be represented in 11 bits"
+
+-- Horizontal_Offset codes
+
+    local HOC={}
+    HOC[0xfff]="Without specific horizontal location"
+    HOC[0xffe]="Horizontal ancillary data space (HANC)"
+    HOC[0xffd]="Between SAV and EAV"
+    HOC[0xffc]="Horizontal offset is larger than can be represented in 12 bits"
+
 -- DID / SDID info from https://smpte-ra.org/smpte-ancillary-data-smpte-st-291 as per 7 Feb 2017
 
     local DID_SDID={}
-   
+
     DID_SDID[0x08]={}
     DID_SDID[0x40]={}
     DID_SDID[0x41]={}
@@ -98,7 +115,7 @@ do
     DID_SDID[0xFD]="Audio Data in HANC space (SDTV) (S272)"
     DID_SDID[0xFE]="Audio Data in HANC space (SDTV) (S272)"
     DID_SDID[0xFF]="Audio Data in HANC space (SDTV) (S272)"
- 
+
     DID_SDID[0x60][0x60]="Ancillary Time Code"
     DID_SDID[0x08][0x08]="MPEG recoding data, VANC space (S353)"
     DID_SDID[0x08][0x0C]="MPEG recoding data, HANC space (S353)"
@@ -107,14 +124,14 @@ do
     DID_SDID[0x40][0x04]="Link Encryption Message 1 (S427)"
     DID_SDID[0x40][0x05]="Link Encryption Message 2 (S427)"
     DID_SDID[0x40][0x06]="Link Encryption Metadata (S427)"
-    DID_SDID[0x41][0x01]="Payload Identification , HANC space (S352)"
+    DID_SDID[0x41][0x01]="Payload Identification, HANC space (S352)"
     DID_SDID[0x41][0x05]="AFD and Bar Data (S2016-3)"
     DID_SDID[0x41][0x06]="Pan-Scan Data (S2016-4)"
     DID_SDID[0x41][0x07]="ANSI/SCTE 104 messages (S2010)"
     DID_SDID[0x41][0x08]="DVB/SCTE VBI data (S2031)"
     DID_SDID[0x41][0x09]="MPEG TS packets in VANC (ST 2056)"
     DID_SDID[0x41][0x0A]="Stereoscopic 3D Frame Compatible Packing and Signaling (ST 2068)"
-    DID_SDID[0x41][0x0B]="Lip Sync data as specified by ST 2064-1 (standard in preparation) (ST 2064-2 (in preparation))"
+    DID_SDID[0x41][0x0B]="Lip Sync data (ST 2064)"
     DID_SDID[0x43][0x01]="Structure of inter-station control data conveyed by ancillary data packets (ITU-R BT.1685)"
     DID_SDID[0x43][0x02]="Subtitling Distribution packet (SDP) (RDD 8)"
     DID_SDID[0x43][0x03]="Transport of ANC packet in an ANC Multipacket (RDD 8)"
@@ -147,36 +164,51 @@ do
     DID_SDID[0x60][0x62]="Generic Time Label (ST 2103 (in development))"
 
     function st_2110_40.dissector(tvb, pinfo, tree)
-        local subtree = tree:add(st_2110_40, tvb(),"ST 2110_40 Data")  
+        local subtree = tree:add(st_2110_40, tvb(),"ST 2110_40 Data")
 ---
 --- Read ANC RTP payload header
 ---
-        subtree:add(F.ESN, tvb(0,2))
-	subtree:add(F.Length, tvb(2,2))
-   	subtree:add(F.ANC_Count, tvb(4,1)) 
-	local ANC_Count=tvb(4,1):uint()
-	subtree:add(F.F,tvb(5,1))
-	local Data_Count=0
-	local offset=8
-	local CS_offset=0
-	local CS_length=2
-	local DID
-	local SDID
-	local SDID_proto
+    subtree:add(F.ESN, tvb(0,2))
+	  subtree:add(F.Length, tvb(2,2))
+   	subtree:add(F.ANC_Count, tvb(4,1))
+	  local ANC_Count=tvb(4,1):uint()
+	  subtree:add(F.F,tvb(5,1))
+	  local Data_Count=0
+	  local offset=8
+	  local CS_offset=0
+	  local CS_length=2
+	  local DID
+	  local SDID
+	  local SDID_proto
+    local Line_Number
+    local LN_proto
+    local Horiz_Offset
+    local HO_proto
 ---
 --- Read ANC packets in payload
 ---
 	for i=1,ANC_Count do
 		subtree:add(F.C,tvb(offset,1))
-		subtree:add(F.Line_Number,tvb(offset,2))
-		subtree:add(F.HO,tvb(offset+1,2))
-		subtree:add(F.DID,tvb(offset+4,2))
+		LN_proto=subtree:add(F.Line_Number,tvb(offset,2))
+    Line_Number=tvb(offset,2):bitfield(1,11)
+    if LNC[Line_Number] then
+        LN_proto:append_text(":"..LNC[Line_Number])
+    end
+		HO_proto=subtree:add(F.HO,tvb(offset+1,2))
+    Horiz_Offset=tvb(offset+1,2):bitfield(4,12)
+    subtree:add(F.S,tvb(offset+3,1))
+    subtree:add(F.StreamNum,tvb(offset+3,1))
+    StreamNum=tvb(offset+2,1):bitfield(1,7)
+    if HOC[Horiz_Offset] then
+        HO_proto:append_text(":"..HOC[Horiz_Offset])
+    end
+    subtree:add(F.DID,tvb(offset+4,2))
 		DID=tvb(offset+4,2):bitfield(2,8)
 		SDID_proto=subtree:add(F.SDID,tvb(offset+5,2))
 		SDID=tvb(offset+5,2):bitfield(4,8)
 		if DID_SDID[DID] and not DID_SDID[DID][SDID] then
 			SDID_proto:append_text(":"..DID_SDID[DID])
-		end	
+		end
 		if DID_SDID[DID] and DID_SDID[DID][SDID] then
 			SDID_proto:append_text(":"..DID_SDID[DID][SDID])
 		end
@@ -188,7 +220,7 @@ do
 		CS_length=2
 		UDW_bits=(Data_Count*10)-2
 		if (UDW_bits % 8 == 0) then
-			CS_offset = 1 
+			CS_offset = 1
 		else
 			CS_offset=0
 		end
@@ -197,34 +229,35 @@ do
 		end
 		subtree:add(F.Checksum_Word,tvb(offset+6+UDW_length+CS_offset,CS_length))
 ---
---- C,Line_Number,Horizontal_Offset,reserved,DID,SDID,Data_Count,Checksum_Word=72 
+--- C,Line_Number,Horizontal_Offset,reserved,DID,SDID,Data_Count,Checksum_Word=72
+--- determine offset to next ANC packet, including Word_Align to 32 bit boundary
 ---
-		offset=offset+(math.ceil((72+(Data_Count*10)+8)/32)*4)
+		offset=offset+(math.ceil((72+(Data_Count*10))/32)*4)
 	end
-    end  
-  
-    -- register dissector to dynamic payload type dissectorTable  
-    local dyn_payload_type_table = DissectorTable.get("rtp_dyn_payload_type")  
-    dyn_payload_type_table:add("st_2110_40", st_2110_40)  
-  
+    end
+
+    -- register dissector to dynamic payload type dissectorTable
+    local dyn_payload_type_table = DissectorTable.get("rtp_dyn_payload_type")
+    dyn_payload_type_table:add("st_2110_40", st_2110_40)
+
     -- register dissector to RTP payload type
-    local payload_type_table = DissectorTable.get("rtp.pt")  
-    local old_dissector = nil  
-    local old_dyn_pt = 0  
-    function st_2110_40.init()  
+    local payload_type_table = DissectorTable.get("rtp.pt")
+    local old_dissector = nil
+    local old_dyn_pt = 0
+    function st_2110_40.init()
         if (prefs.dyn_pt ~= old_dyn_pt) then
             if (old_dyn_pt > 0) then
                 if (old_dissector == nil) then
-                    payload_type_table:remove(old_dyn_pt, st_2110_40)  
+                    payload_type_table:remove(old_dyn_pt, st_2110_40)
                 else
-                    payload_type_table:add(old_dyn_pt, old_dissector)  
-                end  
-            end  
+                    payload_type_table:add(old_dyn_pt, old_dissector)
+                end
+            end
             old_dyn_pt = prefs.dyn_pt
-            old_dissector = payload_type_table:get_dissector(old_dyn_pt)  
-            if (prefs.dyn_pt > 0) then  
-                payload_type_table:add(prefs.dyn_pt, st_2110_40)  
-            end  
-        end   
-    end  
+            old_dissector = payload_type_table:get_dissector(old_dyn_pt)
+            if (prefs.dyn_pt > 0) then
+                payload_type_table:add(prefs.dyn_pt, st_2110_40)
+            end
+        end
+    end
 end
