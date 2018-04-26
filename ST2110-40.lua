@@ -48,6 +48,13 @@ do
   F.UDW=ProtoField.bytes("st_2110_40.UDW","User_Data_Words_bytes")
   F.Checksum_Word=ProtoField.bytes("st_2110_40.Checksum_Word","Checksum_Word_bytes")
 
+-- User Data Structure
+
+  F.Magic=ProtoField.uint16("st_2110_40.Data.Magic","MagicHeader", base.HEX,nil)
+  F.DataWord_Count=ProtoField.uint8("st_2110_40.Data.DW_Count","Data Count", base.DEC,nil)
+  F.Frame_Rate=ProtoField.uint8("st_2110_40.Data.FrameRate","Frame Rate", base.HEX,nil)
+
+
   -- Line_Number codes
 
   local LNC={}
@@ -216,6 +223,42 @@ do
       Data_Count=tvb(offset+6,2):bitfield(6,8)
       local UDW_length=1+math.ceil(((Data_Count*10)-2)/8)
       subtree:add(F.UDW,tvb(offset+7,UDW_length))
+
+      local data_Table=ByteArray.new()
+
+      --
+      -- User Data Words is an array of 10 bits words
+      -- For each 10 bits words, 2 MSB bits (b8 and b9)
+      -- are bits used to error detection.
+      -- These bits won't be extracted in the byte Array.
+      --
+      local c=0
+      local it=0
+      local off=8
+      data_Table:set_size(Data_Count)
+      for i=0,UDW_length do
+      if (i % 5 == 0) then
+        c=tvb(offset+off+i,2):bitfield(0,8)
+      elseif (i % 5 == 1) then
+        c=tvb(offset+off+i,2):bitfield(2,8)
+      elseif (i % 5 == 2) then
+        c=tvb(offset+off+i,2):bitfield(4,8)
+      elseif (i % 5 == 3) then
+        c=tvb(offset+off+i,2):bitfield(6,8)
+      elseif (i % 5 == 4 ) then
+        -- do nothing, skip to next word
+      else
+        error("Problem")
+      end
+      if (it<Data_Count and (i % 5 ~= 4) ) then
+        data_Table:set_index(it,c)
+        it = it+1
+      end
+      end
+
+      local ntvb=data_Table:tvb()
+      local tree_data = subtree:add(tree,ntvb(), "User Data Words")
+
       CS_offset=0
       CS_length=2
       UDW_bits=(Data_Count*10)-2
