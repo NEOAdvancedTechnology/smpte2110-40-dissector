@@ -54,6 +54,9 @@ do
   F.DataWord_Count=ProtoField.uint8("st_2110_40.Data.DW_Count","Data Count", base.DEC,nil)
   F.Frame_Rate=ProtoField.uint8("st_2110_40.Data.FrameRate","Frame Rate", base.HEX,nil)
 
+  -- Ancillary Time Code (S12M-2)
+  F.TimeCode=ProtoField.string("st_2110_40.Data.TimeCode","TimeCode")
+  F.VITC=ProtoField.string("st_2110_40.Data.VITC","VITC")
 
   -- Line_Number codes
 
@@ -258,6 +261,57 @@ do
 
       local ntvb=data_Table:tvb()
       local tree_data = subtree:add(tree,ntvb(), "User Data Words")
+
+      --
+      -- Parsing time code DID=0x60 and SDID=0x60
+      -- Ancillary Time Code (S12M-2)
+      -- https://www.itu.int/dms_pubrec/itu-r/rec/bt/R-REC-BT.1366-0-199802-S!!PDF-E.pdf
+      -- The bits b4-b7 (4 MSB bits of the UDW) contains the timecode data
+      -- VITC is contained in the b3 bit of each word
+      --
+
+      if ( DID==0x60 and SDID==0x60 and Data_Count==16 ) then
+        local time_Table=ByteArray.new()
+        local vitc_Table=ByteArray.new()
+        time_Table:set_size(Data_Count)
+        vitc_Table:set_size(Data_Count)
+        for x=0, Data_Count-1 do
+          time=ntvb(x,1):bitfield(0,4)
+          vitc=ntvb(x,1):bitfield(5,1)
+          vitc_Table:set_index(x,vitc)
+          time_Table:set_index(x,time)
+        end
+
+        -- Timecode format
+        -- (UDW-15 & UDW-13)hours | (UDW-11 & UDW-9)minutes | (UDW-7 & UDW-5)seconds |
+        -- (UDW-3 & UDW-1)frames
+        local ttvb=time_Table:tvb()
+        local timeStr = string.format("%d%dH:%d%dm:%d%ds:%d%dframes",
+          ttvb(14,1):bitfield(6,2),
+          ttvb(12,1):bitfield(4,4),
+          ttvb(10,1):bitfield(5,3),
+          ttvb(8,1):bitfield(4,4),
+          ttvb(6,1):bitfield(5,3),
+          ttvb(4,1):bitfield(4,4),
+          ttvb(2,1):bitfield(6,2),
+          ttvb(0,1):bitfield(4,4) )
+        tree_data:add(F.TimeCode, timeStr)
+
+        -- VITC format
+        -- Distributed binary groups (DBB1 and DBB2) are formed by bit 3 of each UDW
+        -- TODO: do a decoder, array of bits to uint8
+        local vtvb=vitc_Table:tvb()
+        local vitc_str=string.format("0x%d%d%d%d%d%d%d%d",
+          vtvb(8,1):bitfield(7,1),
+          vtvb(9,1):bitfield(7,1),
+          vtvb(10,1):bitfield(7,1),
+          vtvb(11,1):bitfield(7,1),
+          vtvb(12,1):bitfield(7,1),
+          vtvb(13,1):bitfield(7,1),
+          vtvb(14,1):bitfield(7,1),
+          vtvb(15,1):bitfield(7,1) )
+        tree_data:add(F.VITC, vitc_str)
+      end
 
       CS_offset=0
       CS_length=2
