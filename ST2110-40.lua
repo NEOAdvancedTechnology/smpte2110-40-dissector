@@ -400,6 +400,39 @@ do
           str2 = tostring(data_CC2,ENC_UTF8)
           tree_data:add(F.CCData2, str2)
         end
+
+        --
+        -- Parsing Service Block Packet (packet_data)
+        --
+        local service_nb=0
+        local block_size=0
+        local null_fill=0
+        local extended_service_nb=0
+        local block_data=ByteArray.new()
+
+        local btvb=data_CC1:tvb()
+        local b = 1
+        while (b < 3) do
+
+          local block_tree = subtree:add(tree,btvb(),string.format("Service Block Packet %d",b))
+          block_tree:add(F.CCServiceNb,btvb(0,1):bitfield(0,3))
+          block_size=btvb(0,1):bitfield(3,5)
+          block_tree:add(F.CCBlockSize,block_size)
+          block_data:set_size(block_size)
+          for n=0, block_size-1 do
+            block_data:set_index(n,btvb(2+n,1):bitfield(0,8))
+          end
+
+          if block_size~=0 then
+            str=tostring(block_data,ENC_UTF8)
+            block_tree:add(F.CCBlockData,str)
+          end
+
+          -- switch to the next block data
+          btvb=data_CC2:tvb()
+          b=b+1
+        end
+
       end       -- end if
 
       CS_offset=0
