@@ -53,6 +53,7 @@ do
   F.Magic=ProtoField.uint16("st_2110_40.Data.Magic","MagicHeader", base.HEX,nil)
   F.DataWord_Count=ProtoField.uint8("st_2110_40.Data.DW_Count","Data Count", base.DEC,nil)
   F.Frame_Rate=ProtoField.uint8("st_2110_40.Data.FrameRate","Frame Rate", base.HEX,nil)
+  F.CDP_Section_Type=ProtoField.uint8("st_2110_40.Data.Section_Type","CDP Section Type", base.HEX,nil)
 
   -- Ancillary Time Code (S12M-2)
   F.TimeCode=ProtoField.string("st_2110_40.Data.TimeCode","TimeCode")
@@ -70,7 +71,7 @@ do
   F.CCServiceNb=ProtoField.uint8("st_2110_40.Data.CCServiceNb","CC Block Service Number", base.DEC,nil)
   F.CCBlockSize=ProtoField.uint8("st_2110_40.Data.CCBlockSize","CC Block Size", base.DEC,nil)
   F.CCBlockData=ProtoField.string("st_2110_40.Data.CCBlockData","CC Block Data")
-  
+
   -- Line_Number codes
 
   local LNC={}
@@ -185,6 +186,13 @@ do
   DID_SDID[0x64][0x64]="Time Code in HANC space (Deprecated; for reference only) (RP196 (Withdrawn))"
   DID_SDID[0x64][0x7F]="VITC in HANC space (Deprecated; for reference only) (RP196 (Withdrawn))"
   DID_SDID[0x60][0x62]="Generic Time Label (ST 2103 (in development))"
+
+  -- Values for CDP Section IDs
+  local CDP_Section_Type={}
+  CDP_Section_Type[0x71]="TimeCode Section ID"
+  CDP_Section_Type[0x72]="CC Data Section ID"
+  CDP_Section_Type[0x73]="CC Service Information Section ID"
+  CDP_Section_Type[0x71]="CC Footer Section ID"
 
   -- Values for CDP Closed Caption Data
   -- EIA 708B Data mapping into VANC space (S334-1)
@@ -346,93 +354,96 @@ do
         tree_data:add(F.CCDataSection,ntvb(7,1))
         tree_data:add(F.CCDataCount, ntvb(8,1):bitfield(3,5))
 
-        local dataSection = ntvb(7,1)
-        local dataSection_Count = ntvb(8,1):bitfield(3,5)
-
-        local n=0
-        local CDP_CC_Type = 0
-        local CC_type_str
-        local value = 0
-        local buffer_size=0
-
-        --
-        -- Parsing DTVCC packet (CC_data_pkt) inside user_data_type_structure
-        -- CC_data_pkt (24bits): Type[1 byte] - Pkt_Data[2 bytes]
-        --
-        local data_CC1=ByteArray.new()
-        local data_CC2=ByteArray.new()
-        data_CC1:set_size(dataSection_Count)
-        data_CC2:set_size(dataSection_Count)
-
-        for c=1, dataSection_Count do
-          -- parsing CC_Data type
-          -- TODO: maybe take the 2 LSB bits
-          CDP_CC_Type=ntvb(9+n,1):bitfield(0,8)
-          CC_type_str=tree_data:add(F.CCType, CDP_CC_Type)
-          if CC_TYPE[CDP_CC_Type] then
-            CC_type_str:append_text(": "..CC_TYPE[CDP_CC_Type])
-          end
-          value=ntvb(9+n+1,2)
-          tree_data:add(F.CCValue,value)
-
-          -- Fill the Packet_Data_Structure
-          -- Value: cc_data1[1byte] - cc_data_2[1byte]
-          -- Service 1 is designated as the Primary Caption Service
-          -- Service 2 is the Secondary Language Service
-          if CDP_CC_Type == 0xFE then
-            data_CC1:set_index(buffer_size, ntvb(9+n+1,1):bitfield(0,8))
-            data_CC2:set_index(buffer_size, ntvb(9+n+2,1):bitfield(0,8))
-            
-            --data_CC:append(data_Table:subset(9+n+1,2))
-            buffer_size=buffer_size+1
-          end
-          n = n+3
+        local CDPsection=ntvb(7,1):bitfield(0,8)
+        section=tree_data:add(F.CDP_Section_Type, CDPsection)
+        if CDP_Section_Type[CDPsection] then
+          section:append_text(":"..CDP_Section_Type[CDPsection])
         end
 
-        data_CC1:set_size(buffer_size)
-        data_CC2:set_size(buffer_size)
-        
-        -- Print both Pkt_Data_Structure
-        -- TODO: find a way to print UTF8-ascii
-        if buffer_size~=0 then
-          str1 = tostring(data_CC1,ENC_UTF8)
-          tree_data:add(F.CCData1, str1)
-          str2 = tostring(data_CC2,ENC_UTF8)
-          tree_data:add(F.CCData2, str2)
-        end
+        if CDPsection == 0x72 then
+          local dataSection_Count = ntvb(8,1):bitfield(3,5)
+          local n=0
+          local CDP_CC_Type = 0
+          local CC_type_str
+          local value = 0
+          local buffer_size=0
 
-        --
-        -- Parsing Service Block Packet (packet_data)
-        --
-        local service_nb=0
-        local block_size=0
-        local null_fill=0
-        local extended_service_nb=0
-        local block_data=ByteArray.new()
+          --
+          -- Parsing DTVCC packet (CC_data_pkt) inside user_data_type_structure
+          -- CC_data_pkt (24bits): Type[1 byte] - Pkt_Data[2 bytes]
+          --
+          local data_CC1=ByteArray.new()
+          local data_CC2=ByteArray.new()
+          data_CC1:set_size(dataSection_Count)
+          data_CC2:set_size(dataSection_Count)
 
-        local btvb=data_CC1:tvb()
-        local b = 1
-        while (b < 3) do
+          for c=1, dataSection_Count do
+            -- parsing CC_Data type
+            -- TODO: maybe take the 2 LSB bits
+            CDP_CC_Type=ntvb(9+n,1):bitfield(0,8)
+            CC_type_str=tree_data:add(F.CCType, CDP_CC_Type)
+            if CC_TYPE[CDP_CC_Type] then
+              CC_type_str:append_text(": "..CC_TYPE[CDP_CC_Type])
+            end
+            value=ntvb(9+n+1,2)
+            tree_data:add(F.CCValue,value)
 
-          local block_tree = subtree:add(tree,btvb(),string.format("Service Block Packet %d",b))
-          block_tree:add(F.CCServiceNb,btvb(0,1):bitfield(0,3))
-          block_size=btvb(0,1):bitfield(3,5)
-          block_tree:add(F.CCBlockSize,block_size)
-          block_data:set_size(block_size)
-          for n=0, block_size-1 do
-            block_data:set_index(n,btvb(2+n,1):bitfield(0,8))
+            -- Fill the Packet_Data_Structure
+            -- Value: cc_data1[1byte] - cc_data_2[1byte]
+            -- Service 1 is designated as the Primary Caption Service
+            -- Service 2 is the Secondary Language Service
+            if CDP_CC_Type == 0xFE then
+              data_CC1:set_index(buffer_size, ntvb(9+n+1,1):bitfield(0,8))
+              data_CC2:set_index(buffer_size, ntvb(9+n+2,1):bitfield(0,8))
+              buffer_size=buffer_size+1
+            end
+            n = n+3
           end
 
-          if block_size~=0 then
-            str=tostring(block_data,ENC_UTF8)
-            block_tree:add(F.CCBlockData,str)
+          data_CC1:set_size(buffer_size)
+          data_CC2:set_size(buffer_size)
+
+          -- Print both Pkt_Data_Structure
+          -- TODO: find a way to print UTF8-ascii
+          if buffer_size~=0 then
+            str1 = tostring(data_CC1,ENC_UTF8)
+            tree_data:add(F.CCData1, str1)
+            str2 = tostring(data_CC2,ENC_UTF8)
+            tree_data:add(F.CCData2, str2)
           end
 
-          -- switch to the next block data
-          btvb=data_CC2:tvb()
-          b=b+1
-        end
+          --
+          -- Parsing Service Block Packet (packet_data)
+          --
+          local service_nb=0
+          local block_size=0
+          local null_fill=0
+          local extended_service_nb=0
+          local block_data=ByteArray.new()
 
+          local btvb=data_CC1:tvb()
+          local b = 1
+          while (b < 3) do
+
+            local block_tree = subtree:add(tree,btvb(),string.format("Service Block Packet %d",b))
+            block_tree:add(F.CCServiceNb,btvb(0,1):bitfield(0,3))
+            block_size=btvb(0,1):bitfield(3,5)
+            block_tree:add(F.CCBlockSize,block_size)
+            block_data:set_size(block_size)
+            for n=0, block_size-1 do
+              block_data:set_index(n,btvb(2+n,1):bitfield(0,8))
+            end
+
+            if block_size~=0 then
+              str=tostring(block_data,ENC_UTF8)
+              block_tree:add(F.CCBlockData,str)
+            end
+
+            -- switch to the next block data
+            btvb=data_CC2:tvb()
+            b=b+1
+          end
+        end     -- end if CDPSection = 0x72
       end       -- end if
 
       CS_offset=0
