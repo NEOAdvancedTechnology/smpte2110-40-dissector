@@ -5,7 +5,7 @@
 -- to use in Wireshark:
 -- 1) Ensure your Wireshark works with Lua plugins - "About Wireshark" should say it is compiled with Lua
 -- 2) Install this dissector in the proper plugin directory - see "About Wireshark/Folders" to see Personal
---    and Global plugin directories.  After putting this dissector in the proper folder, 
+--    and Global plugin directories.  After putting this dissector in the proper folder,
 --    "About Wireshark/Plugins" should list "ST-2110_40.lua"
 -- 3) In Wireshark Preferences, under "Protocols", set st_2110_40 as dynamic payload type being used
 -- 4) Capture packets of ST 2110_40
@@ -257,7 +257,10 @@ do
       end
       subtree:add(F.Data_Count,tvb(offset+6,2))
       Data_Count=tvb(offset+6,2):bitfield(6,8)
-      local UDW_length=1+math.ceil(((Data_Count*10)-2)/8)
+
+      -- the calculation of the UDW length includes math.floor
+      -- to round the numer to the smaller or equal
+      local UDW_length=1+math.floor(((Data_Count*10)-2)/8)
 
       subtree:add(F.UDW,tvb(offset+7,UDW_length))
 
