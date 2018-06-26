@@ -5,7 +5,7 @@
 -- to use in Wireshark:
 -- 1) Ensure your Wireshark works with Lua plugins - "About Wireshark" should say it is compiled with Lua
 -- 2) Install this dissector in the proper plugin directory - see "About Wireshark/Folders" to see Personal
---    and Global plugin directories.  After putting this dissector in the proper folder, 
+--    and Global plugin directories.  After putting this dissector in the proper folder,
 --    "About Wireshark/Plugins" should list "ST-2110_40.lua"
 -- 3) In Wireshark Preferences, under "Protocols", set st_2110_40 as dynamic payload type being used
 -- 4) Capture packets of ST 2110_40
@@ -47,6 +47,32 @@ do
   F.SDID=ProtoField.uint16("st_2110_40.SDID","SDID",base.HEX,nil,0x0FF0)
   F.UDW=ProtoField.bytes("st_2110_40.UDW","User_Data_Words_bytes")
   F.Checksum_Word=ProtoField.bytes("st_2110_40.Checksum_Word","Checksum_Word_bytes")
+
+-- User Data Structure
+
+  F.Magic=ProtoField.uint16("st_2110_40.Data.Magic","MagicHeader", base.HEX,nil)
+  F.DataWord_Count=ProtoField.uint8("st_2110_40.Data.DW_Count","Data Count", base.DEC,nil)
+  F.Frame_Rate=ProtoField.uint8("st_2110_40.Data.FrameRate","Frame Rate", base.HEX,nil)
+  F.Section_Available=ProtoField.uint8("st_2110_40.Data.Section_Available","Section available", base.HEX,nil,0xFF)
+  F.CDP_Section_Type=ProtoField.uint8("st_2110_40.Data.Section_Type","CDP Section Type", base.HEX,nil)
+  F.CDP_Seq_Counter=ProtoField.uint16("st_2110_40.Data.CDP_Seq_Counter","CDP Sequence Counter", base.HEX,nil)
+
+  -- Ancillary Time Code (S12M-2)
+  F.TimeCode=ProtoField.string("st_2110_40.Data.TimeCode","TimeCode")
+  F.VITC=ProtoField.string("st_2110_40.Data.VITC","VITC")
+
+  -- EIA 708B Data mapping into VANC space (S334-1)
+
+  F.CCDataSection=ProtoField.uint8("st_2110_40.Data.CCDataSection","CC Data Section", base.HEX,nil)
+  F.CCDataCount=ProtoField.uint8("st_2110_40.Data.CCDataCount","CC Data Count", base.DEC,nil)
+  F.CCType=ProtoField.uint8("st_2110_40.Data.CCType","CC Data Type", base.HEX,nil)
+  F.CCValue=ProtoField.uint16("st_2110_40.Data.CCValue","CC Data Value", base.HEX,nil)
+  F.CCData1=ProtoField.string("st_2110_40.Data.CCCData1","CC Packet_Data_Structure Service 1", base.UNICODE)
+  F.CCData2=ProtoField.string("st_2110_40.Data.CCCData2","CC Packet_Data_Structure Service 2", base.UNICODE)
+
+  F.CCServiceNb=ProtoField.uint8("st_2110_40.Data.CCServiceNb","CC Block Service Number", base.DEC,nil)
+  F.CCBlockSize=ProtoField.uint8("st_2110_40.Data.CCBlockSize","CC Block Size", base.DEC,nil)
+  F.CCBlockData=ProtoField.string("st_2110_40.Data.CCBlockData","CC Block Data", base.UNICODE)
 
   -- Line_Number codes
 
@@ -163,6 +189,23 @@ do
   DID_SDID[0x64][0x7F]="VITC in HANC space (Deprecated; for reference only) (RP196 (Withdrawn))"
   DID_SDID[0x60][0x62]="Generic Time Label (ST 2103 (in development))"
 
+  -- Values for CDP Section IDs
+  local CDP_Section_Type={}
+  CDP_Section_Type[0x71]="TimeCode Section ID"
+  CDP_Section_Type[0x72]="CC Data Section ID"
+  CDP_Section_Type[0x73]="CC Service Information Section ID"
+  CDP_Section_Type[0x71]="CC Footer Section ID"
+
+  -- Values for CDP Closed Caption Data
+  -- EIA 708B Data mapping into VANC space (S334-1)
+  -- Values from https://en.wikipedia.org/wiki/CEA-708#Packets_in_CEA-708
+  local CC_TYPE={}
+  CC_TYPE[0xFC]="NTSC line 21 field 1 Closed Captions"    -- should be interpreted as EIA-608
+  CC_TYPE[0xFD]="NTSC line 21 field 2 Closed Captions"    -- should be interpreted as EIA-608
+  CC_TYPE[0xFE]="DTVCC Channel Packet Data"
+  CC_TYPE[0xFF]="DTVCC Channel Packet Start"
+  CC_TYPE[0xFA]="DTVCC Channel Packet Data Inactive"
+
   function st_2110_40.dissector(tvb, pinfo, tree)
     local subtree = tree:add(st_2110_40, tvb(),"ST 2110_40 Data")
     ---
@@ -214,8 +257,212 @@ do
       end
       subtree:add(F.Data_Count,tvb(offset+6,2))
       Data_Count=tvb(offset+6,2):bitfield(6,8)
-      local UDW_length=1+math.ceil(((Data_Count*10)-2)/8)
+
+      -- the calculation of the UDW length includes math.floor
+      -- to round the numer to the smaller or equal
+      local UDW_length=1+math.floor(((Data_Count*10)-2)/8)
+
       subtree:add(F.UDW,tvb(offset+7,UDW_length))
+
+      local data_Table=ByteArray.new()
+
+      --
+      -- User Data Words is an array of 10 bits words
+      -- For each 10 bits words, 2 MSB bits (b8 and b9)
+      -- are bits used to error detection.
+      -- These bits won't be extracted in the byte Array.
+      --
+      local c=0
+      local it=0
+      local off=8
+      data_Table:set_size(Data_Count)
+      for i=0,UDW_length-1 do
+        if (i % 5 == 0) then
+          c=tvb(offset+off+i,2):bitfield(0,8)
+        elseif (i % 5 == 1) then
+          c=tvb(offset+off+i,2):bitfield(2,8)
+        elseif (i % 5 == 2) then
+          c=tvb(offset+off+i,2):bitfield(4,8)
+        elseif (i % 5 == 3) then
+          c=tvb(offset+off+i,2):bitfield(6,8)
+        elseif (i % 5 == 4 ) then
+          -- do nothing, skip to next word
+        else
+          error("Problem")
+        end
+        if (it<Data_Count and (i % 5 ~= 4) ) then
+          data_Table:set_index(it,c)
+          it = it+1
+        end
+      end
+
+      local ntvb=data_Table:tvb()
+      local tree_data = subtree:add(tree,ntvb(), "User Data Words")
+
+      --
+      -- Parsing time code DID=0x60 and SDID=0x60
+      -- Ancillary Time Code (S12M-2)
+      -- https://www.itu.int/dms_pubrec/itu-r/rec/bt/R-REC-BT.1366-0-199802-S!!PDF-E.pdf
+      -- The bits b4-b7 (4 MSB bits of the UDW) contains the timecode data
+      -- VITC is contained in the b3 bit of each word (where b0 is the LSB bit)
+      --
+
+      if ( DID==0x60 and SDID==0x60 and Data_Count==16 ) then
+        local time_Table=ByteArray.new()
+        local vitc_Table=ByteArray.new()
+        time_Table:set_size(Data_Count)
+        vitc_Table:set_size(Data_Count)
+        for x=0, Data_Count-1 do
+          time=ntvb(x,1):bitfield(0,4)
+          vitc=ntvb(x,1):bitfield(5,1)
+          vitc_Table:set_index(x,vitc)
+          time_Table:set_index(x,time)
+        end
+
+        -- Timecode format
+        -- (UDW-15 & UDW-13)hours | (UDW-11 & UDW-9)minutes | (UDW-7 & UDW-5)seconds |
+        -- (UDW-3 & UDW-1)frames
+        local ttvb=time_Table:tvb()
+        local timeStr = string.format("%d%dH:%d%dm:%d%ds:%d%dframes",
+          ttvb(14,1):bitfield(6,2),
+          ttvb(12,1):bitfield(4,4),
+          ttvb(10,1):bitfield(5,3),
+          ttvb(8,1):bitfield(4,4),
+          ttvb(6,1):bitfield(5,3),
+          ttvb(4,1):bitfield(4,4),
+          ttvb(2,1):bitfield(6,2),
+          ttvb(0,1):bitfield(4,4) )
+        tree_data:add(F.TimeCode, timeStr)
+
+        -- VITC format
+        -- Distributed binary groups (DBB1 and DBB2) are formed by bit 3 of each UDW
+        -- TODO: do a decoder, array of bits to uint8
+        local vtvb=vitc_Table:tvb()
+        local vitc_str=string.format("0x%d%d%d%d%d%d%d%d",
+          vtvb(8,1):bitfield(7,1),
+          vtvb(9,1):bitfield(7,1),
+          vtvb(10,1):bitfield(7,1),
+          vtvb(11,1):bitfield(7,1),
+          vtvb(12,1):bitfield(7,1),
+          vtvb(13,1):bitfield(7,1),
+          vtvb(14,1):bitfield(7,1),
+          vtvb(15,1):bitfield(7,1) )
+        tree_data:add(F.VITC, vitc_str)
+
+      --
+      -- Parsing EIA 708B Data mapping into VANC space (S334-1)
+      -- DID=0x61 and SDID=0x01
+      -- Documentation followed from https://en.wikipedia.org/wiki/CEA-708#Packets_in_CEA-708
+      --
+      elseif ( DID == 0x61 and SDID == 0x01 ) then
+        --
+        -- CDP Header Syntax
+        -- Magic[2bytes] = 0x9669 | CDP Length [1bytes] | Frame Rate[1bytes]
+        -- Sections available [1byte] | Counter[2bytes] | Sections ...
+        --
+        tree_data:add(F.Magic,ntvb(0,2))
+        CDP_size = ntvb(2,1):bitfield(0,8)
+        tree_data:add(F.DataWord_Count, CDP_size)
+        tree_data:add(F.Frame_Rate, ntvb(3,1):bitfield(0,4))
+        tree_data:add(F.Section_Available, ntvb(4,1))
+        tree_data:add(F.CDP_Seq_Counter, ntvb(5,2))
+
+        local s=7
+        while s < CDP_size do
+          --tree_data:add(F.CCDataSection,ntvb(s,1))
+
+          local CDPsection=ntvb(s,1):bitfield(0,8)
+          section=tree_data:add(F.CDP_Section_Type, CDPsection)
+          if CDP_Section_Type[CDPsection] then
+            section:append_text(":"..CDP_Section_Type[CDPsection])
+          end
+
+          -- Parsing CDP CC Service Information
+          if CDPsection == 0x73 then
+            tree_data:add(F.CCDataCount, ntvb(s+1,1):bitfield(4,4))
+            s=s+16
+          -- Parsing CDP Footer Section
+          elseif CDPsection == 0x74 then
+            -- FooterSequence Counter (16bits)
+            -- Packet Checksum (8bits)
+            s=s+4
+          elseif CDPsection == 0x71 then
+            timeStr = string.format("%d%dH:%d%dm:%d%ds:%d%dframes",
+              ntvb(s+1,1):bitfield(2,2),
+              ntvb(s+1,1):bitfield(4,4),
+              ntvb(s+2,1):bitfield(1,3),
+              ntvb(s+2,1):bitfield(4,4),
+              ntvb(s+3,1):bitfield(1,3),
+              ntvb(s+3,1):bitfield(4,4),
+              ntvb(s+4,1):bitfield(2,2),
+              ntvb(s+4,1):bitfield(4,4) )
+            tree_data:add(F.TimeCode, timeStr)
+            s=s+4
+          -- Parsing CC Data Section
+          elseif CDPsection == 0x72 then
+            local dataSection_Count = ntvb(s+1,1):bitfield(3,5)
+            tree_data:add(F.CCDataCount, dataSection_Count)
+            local n=0
+            local CDP_CC_Type = 0
+            local CC_type_str
+            local value = 0
+            local buffer_size=0
+
+            offset=s+2
+            s=s+2   -- section type + section count
+            dSize=dataSection_Count*3
+            s=s+dSize
+
+            --
+            -- Parsing DTVCC packet (CC_data_pkt) inside user_data_type_structure
+            -- CC_data_pkt (24bits): Type[1 byte] - Pkt_Data[2 bytes]
+            --
+            local data_CC1=ByteArray.new()
+            local data_CC2=ByteArray.new()
+            data_CC1:set_size(dataSection_Count)
+            data_CC2:set_size(dataSection_Count)
+
+            for c=1, dataSection_Count do
+              -- parsing CC_Data type
+              -- TODO: maybe take the 2 LSB bits
+              CDP_CC_Type=ntvb(offset+n,1):bitfield(0,8)
+              CC_type_str=tree_data:add(F.CCType, CDP_CC_Type)
+              if CC_TYPE[CDP_CC_Type] then
+                CC_type_str:append_text(": "..CC_TYPE[CDP_CC_Type])
+              end
+              value=ntvb(offset+n+1,2)
+              tree_data:add(F.CCValue,value)
+
+              -- Fill the Packet_Data_Structure
+              -- Value: cc_data1[1byte] - cc_data_2[1byte]
+              -- Service 1 is designated as the Primary Caption Service
+              -- Service 2 is the Secondary Language Service
+              if CDP_CC_Type == 0xFE then
+                data_CC1:set_index(buffer_size, ntvb(offset+n+1,1):bitfield(0,8))
+                data_CC2:set_index(buffer_size, ntvb(offset+n+2,1):bitfield(0,8))
+                buffer_size=buffer_size+1
+              end
+              n=n+3
+            end
+
+            data_CC1:set_size(buffer_size)
+            data_CC2:set_size(buffer_size)
+
+            -- Print both Pkt_Data_Structure
+            -- TODO: find a way to print UTF8-ascii
+            if buffer_size~=0 then
+              str1 = tostring(data_CC1,ENC_UTF8)
+              tree_data:add(F.CCData1, str1)
+              str2 = tostring(data_CC2,ENC_UTF8)
+              tree_data:add(F.CCData2, str2)
+            end
+
+          else
+            s=s+1
+          end   -- end if CDPSection = 0x72
+        end     -- end for CDP Section
+      end       -- end if DID
+
       CS_offset=0
       CS_length=2
       UDW_bits=(Data_Count*10)-2
@@ -233,8 +480,8 @@ do
       --- determine offset to next ANC packet, including Word_Align to 32 bit boundary
       ---
       offset=offset+(math.ceil((72+(Data_Count*10))/32)*4)
-    end
-  end
+    end       -- end while
+  end         -- end function
 
   -- register dissector to dynamic payload type dissectorTable
   local dyn_payload_type_table = DissectorTable.get("rtp_dyn_payload_type")
