@@ -142,7 +142,6 @@ do
   DID_SDID[0xFE]="Audio Data in HANC space (SDTV) (S272)"
   DID_SDID[0xFF]="Audio Data in HANC space (SDTV) (S272)"
 
-  DID_SDID[0x60][0x60]="Ancillary Time Code"
   DID_SDID[0x08][0x08]="MPEG recoding data, VANC space (S353)"
   DID_SDID[0x08][0x0C]="MPEG recoding data, HANC space (S353)"
   DID_SDID[0x40][0x01]="SDTI transport in active frame space (S305)"
