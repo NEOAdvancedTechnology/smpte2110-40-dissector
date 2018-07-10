@@ -46,6 +46,7 @@ do
   F.DID=ProtoField.uint16("st_2110_40.DID","DID",base.HEX,nil,0x3FC0)
   F.SDID=ProtoField.uint16("st_2110_40.SDID","SDID",base.HEX,nil,0x0FF0)
   F.UDW=ProtoField.bytes("st_2110_40.UDW","User_Data_Words_bytes")
+  F.UDW_array=ProtoField.bytes("st_2110_40.UDW_array","User Data Words")
   F.Checksum_Word=ProtoField.bytes("st_2110_40.Checksum_Word","Checksum_Word_bytes")
 
 -- User Data Structure
@@ -295,8 +296,9 @@ do
         end
       end
 
-      local ntvb=data_Table:tvb()
-      local tree_data = subtree:add(tree,ntvb(), "User Data Words")
+      local ntvb=ByteArray.tvb(data_Table, "UDW Array")
+      local tree_data = subtree:add(F.UDW_array, ntvb())
+      tree_data:set_text("UDW")
 
       --
       -- Parsing time code DID=0x60 and SDID=0x60
