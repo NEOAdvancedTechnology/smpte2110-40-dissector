@@ -22,6 +22,17 @@ to use in Wireshark:
 
 6) You will now see the ST 2110_40 Data dissection of the RTP payload
 
+7) You can extract the Closed Captionning Data with the script parse_CC.sh.
+The utility tshark has to be installed.
+The script extracts with tshark the CC Data from a pcap file and concatenates
+them into an output file or in the standard output.
+
+```
+./parse_CC.sh --in=<PCAP_FILE> --out=<CC_DATA_EXTRACTED_FILE>
+or
+./parse_CC.sh --in=<PCAP_FILE> -v
+```
+
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License
 as published by the Free Software Foundation; either version 2
