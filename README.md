@@ -12,8 +12,8 @@ to use in Wireshark:
 
 2) Install this dissector in the proper plugin directory - see "About Wireshark/Folders" to see Personal
     and Global plugin directories.  After putting this dissector in the proper folder, "About Wireshark/Plugins"
-    should list "ST-2110_40.lua" 
-    
+    should list "ST-2110_40.lua"
+
 3) In Wireshark Preferences, under "Protocols", set st_2110_40 as dynamic payload type being used
 
 4) Capture packets of ST 2110_40
