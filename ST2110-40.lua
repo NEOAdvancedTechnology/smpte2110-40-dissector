@@ -68,12 +68,7 @@ do
   F.CCDataCount=ProtoField.uint8("st_2110_40.Data.CCDataCount","CC Data Count", base.DEC,nil)
   F.CCType=ProtoField.uint8("st_2110_40.Data.CCType","CC Data Type", base.HEX,nil)
   F.CCValue=ProtoField.uint16("st_2110_40.Data.CCValue","CC Data Value", base.HEX,nil)
-  F.CCData1=ProtoField.string("st_2110_40.Data.CCCData1","CC Packet_Data_Structure Service 1", base.UNICODE)
-  F.CCData2=ProtoField.string("st_2110_40.Data.CCCData2","CC Packet_Data_Structure Service 2", base.UNICODE)
-
-  F.CCServiceNb=ProtoField.uint8("st_2110_40.Data.CCServiceNb","CC Block Service Number", base.DEC,nil)
-  F.CCBlockSize=ProtoField.uint8("st_2110_40.Data.CCBlockSize","CC Block Size", base.DEC,nil)
-  F.CCBlockData=ProtoField.string("st_2110_40.Data.CCBlockData","CC Block Data", base.UNICODE)
+  F.CCData=ProtoField.string("st_2110_40.Data.CCData","CC Data Extracted", base.UNICODE)
 
   -- Line_Number codes
 
@@ -370,7 +365,6 @@ do
 
         local s=7
         while s < CDP_size do
-          --tree_data:add(F.CCDataSection,ntvb(s,1))
 
           local CDPsection=ntvb(s,1):bitfield(0,8)
           section=tree_data:add(F.CDP_Section_Type, CDPsection)
@@ -418,12 +412,14 @@ do
             -- Parsing DTVCC packet (CC_data_pkt) inside user_data_type_structure
             -- CC_data_pkt (24bits): Type[1 byte] - Pkt_Data[2 bytes]
             --
-            local data_CC1=ByteArray.new()
-            local data_CC2=ByteArray.new()
-            data_CC1:set_size(dataSection_Count)
-            data_CC2:set_size(dataSection_Count)
+            -- Initialize the array at each packet
+            -- with the dataSection Count
+            -- after the loop the length will be refitted
+            local CC_concat = ByteArray.new()
+            CC_concat:set_size(dataSection_Count*2)
 
             for c=1, dataSection_Count do
+
               -- parsing CC_Data type
               -- TODO: maybe take the 2 LSB bits
               CDP_CC_Type=ntvb(offset+n,1):bitfield(0,8)
@@ -434,28 +430,53 @@ do
               value=ntvb(offset+n+1,2)
               tree_data:add(F.CCValue,value)
 
+              -- The first CDP_CC_Type is the service designated
+              if c==1 then
+                serviceNb=CDP_CC_Type
+              end
+
               -- Fill the Packet_Data_Structure
               -- Value: cc_data1[1byte] - cc_data_2[1byte]
               -- Service 1 is designated as the Primary Caption Service
               -- Service 2 is the Secondary Language Service
-              if CDP_CC_Type == 0xFE then
-                data_CC1:set_index(buffer_size, ntvb(offset+n+1,1):bitfield(0,8))
-                data_CC2:set_index(buffer_size, ntvb(offset+n+2,1):bitfield(0,8))
+              -- We collect only data from the first service (serviceNb==0xfc)
+              if CDP_CC_Type == 0xFE and serviceNb == 0xFC then
+                CC_concat:set_index(buffer_size*2, ntvb(offset+n+1,1):bitfield(0,8))
+                CC_concat:set_index(buffer_size*2+1, ntvb(offset+n+2,1):bitfield(0,8))
                 buffer_size=buffer_size+1
               end
               n=n+3
             end
 
-            data_CC1:set_size(buffer_size)
-            data_CC2:set_size(buffer_size)
+            if ( buffer_size > 1 ) then
+
+              if CC_concat:get_index(0)==0x0D
+                and CC_concat:get_index(1)==0x90
+                and CC_concat:get_index(4)==0x91 then
+                -- do nothing
+                -- 0x0D is a code control
+                -- 0x90 is a "Set Pen Attribute" code
+                -- 0x91 is "Set Pen Color" code
+                CC_concat:set_size(0)
+
+              -- If the frame contains these caption commands, they are "DefineWindow0-7" command
+              -- This command creates one of the eight windows used by the caption decoder.
+              -- The command is followed by 6 bytes defining relative positionning, row and anchor count
+              -- In this plugin, this command is replaced by "\n" ascii code.
+              elseif CC_concat:get_index(0)>=0x98 and CC_concat:get_index(0)<=0x9f then
+                CC_concat:set_size(1)
+                CC_concat:set_index(0, 0x0A)
+              else
+                -- Remove the two last bytes
+                CC_concat:set_size((buffer_size-1)*2)
+              end
+            end
 
             -- Print both Pkt_Data_Structure
             -- TODO: find a way to print UTF8-ascii
             if buffer_size~=0 then
-              str1 = tostring(data_CC1,ENC_UTF8)
-              tree_data:add(F.CCData1, str1)
-              str2 = tostring(data_CC2,ENC_UTF8)
-              tree_data:add(F.CCData2, str2)
+              str = tostring(CC_concat,ENC_UTF8)
+              tree_data:add(F.CCData, str)
             end
 
           else
