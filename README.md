@@ -1,10 +1,8 @@
 # smpte2110-40-dissector
 Dissector for SMPTE ST 2110-40 Ancillary Data
 
-Note that ST 2110-40 is currently under development by SMPTE, and a final version has not been published yet.  However it is expected to reference IETF RFC 8331 which has been published.
-
 Lua Dissector for ST 2110-40 in Wireshark
-Author: Thomas Edwards (thomas.edwards@fox.com)
+Project Lead: Thomas Edwards (thomas.edwards@fox.com)
 
 to use in Wireshark:
 
