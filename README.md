@@ -12,8 +12,8 @@ to use in Wireshark:
 
 2) Install this dissector in the proper plugin directory - see "About Wireshark/Folders" to see Personal
     and Global plugin directories.  After putting this dissector in the proper folder, "About Wireshark/Plugins"
-    should list "ST-2110_40.lua" 
-    
+    should list "ST-2110_40.lua"
+
 3) In Wireshark Preferences, under "Protocols", set st_2110_40 as dynamic payload type being used
 
 4) Capture packets of ST 2110_40
@@ -21,6 +21,17 @@ to use in Wireshark:
 5) "Decode As" those UDP packets as RTP
 
 6) You will now see the ST 2110_40 Data dissection of the RTP payload
+
+7) You can extract the Closed Captionning Data with the script parse_CC.sh.
+The utility tshark has to be installed.
+The script extracts with tshark the CC Data from a pcap file and concatenates
+them into an output file or in the standard output.
+
+```
+./parse_CC.sh --in=<PCAP_FILE> --out=<CC_DATA_EXTRACTED_FILE>
+or
+./parse_CC.sh --in=<PCAP_FILE> -v
+```
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License
