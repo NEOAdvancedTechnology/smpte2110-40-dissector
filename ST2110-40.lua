@@ -403,7 +403,6 @@ do
             local value = 0
             local buffer_size=0
 
-            offset=s+2
             s=s+2   -- section type + section count
             dSize=dataSection_Count*3
             s=s+dSize
