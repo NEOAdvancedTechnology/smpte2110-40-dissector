@@ -403,6 +403,7 @@ do
             local value = 0
             local buffer_size=0
 
+            local cdp_offset=s+2
             s=s+2   -- section type + section count
             dSize=dataSection_Count*3
             s=s+dSize
@@ -421,12 +422,12 @@ do
 
               -- parsing CC_Data type
               -- TODO: maybe take the 2 LSB bits
-              CDP_CC_Type=ntvb(offset+n,1):bitfield(0,8)
+              CDP_CC_Type=ntvb(cdp_offset+n,1):bitfield(0,8)
               CC_type_str=tree_data:add(F.CCType, CDP_CC_Type)
               if CC_TYPE[CDP_CC_Type] then
                 CC_type_str:append_text(": "..CC_TYPE[CDP_CC_Type])
               end
-              value=ntvb(offset+n+1,2)
+              value=ntvb(cdp_offset+n+1,2)
               tree_data:add(F.CCValue,value)
 
               -- The first CDP_CC_Type is the service designated
@@ -440,8 +441,8 @@ do
               -- Service 2 is the Secondary Language Service
               -- We collect only data from the first service (serviceNb==0xfc)
               if CDP_CC_Type == 0xFE and serviceNb == 0xFC then
-                CC_concat:set_index(buffer_size*2, ntvb(offset+n+1,1):bitfield(0,8))
-                CC_concat:set_index(buffer_size*2+1, ntvb(offset+n+2,1):bitfield(0,8))
+                CC_concat:set_index(buffer_size*2, ntvb(cdp_offset+n+1,1):bitfield(0,8))
+                CC_concat:set_index(buffer_size*2+1, ntvb(cdp_offset+n+2,1):bitfield(0,8))
                 buffer_size=buffer_size+1
               end
               n=n+3
