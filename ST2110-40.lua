@@ -59,8 +59,33 @@ do
   F.CDP_Seq_Counter=ProtoField.uint16("st_2110_40.Data.CDP_Seq_Counter","CDP Sequence Counter", base.HEX,nil)
 
   -- Ancillary Time Code (S12M-2)
+  local ANC_DBB1={}
+  for i=0,255 do
+    if     (i == 0x00) then ANC_DBB1[i]="Linear time code (ATC_LTC)"
+    elseif (i == 0x01) then ANC_DBB1[i]="Vertical interval time code #1 (ATC_VITC1)"
+    elseif (i == 0x02) then ANC_DBB1[i]="Vertical interval time code #2 (ATC_VITC2)"
+    elseif (i <= 0x05) then ANC_DBB1[i]="User defined"
+    elseif (i == 0x06) then ANC_DBB1[i]="Film data block (transferred from reader)"
+    elseif (i == 0x07) then ANC_DBB1[i]="Production data block (transferred from reader)"
+    elseif (i <= 0x7C) then ANC_DBB1[i]="Locally generated time address and user data (user defined)"
+    elseif (i == 0x7D) then ANC_DBB1[i]="Video tape data block (locally generated)"
+    elseif (i == 0x7E) then ANC_DBB1[i]="Film data block (locally generated)"
+    elseif (i == 0x7F) then ANC_DBB1[i]="Production data block (locally generated)"
+    else                    ANC_DBB1[i]="Reserved"
+    end
+  end
+
   F.TimeCode=ProtoField.string("st_2110_40.Data.TimeCode","TimeCode")
-  F.VITC=ProtoField.string("st_2110_40.Data.VITC","VITC")
+  F.TimeCodePT=ProtoField.uint8("st_2110_40.Data.TimeCodePT","Payload Type", base.HEX, ANC_DBB1)
+  F.TimeCodeVITC=ProtoField.uint8("st_2110_40.Data.TimeCodeVITC","VITC Data", base.HEX, nil)
+  F.TimeCodeVitcLineSel=ProtoField.uint8("st_2110_40.Data.TimeCodeVITC.LineSel","Line Select", base.DEC, nil, 0x1F)
+  F.TimeCodeVitcLineDup=ProtoField.uint8("st_2110_40.Data.TimeCodeVITC.LineDup","Duplication", base.BOOL, nil, 0x20)
+  local VITC_VLD = {[0] = "No time code error received or locally generated time code address",
+                    [1] = "Transmitted time code interpolated from previous time code (received a time code error)"}
+  F.TimeCodeVitcValidity=ProtoField.uint8("st_2110_40.Data.TimeCodeVITC.Validity","TC Validity", base.DEC, VITC_VLD, 0x40)
+  local VITC_PROC = {[0] = "Binary groups in time code data stream are processed to compensate for latency",
+                     [1] = "Binary groups in time code data stream are only retransmitted (no delay compensation)"}
+  F.TimeCodeVitcProcess=ProtoField.uint8("st_2110_40.Data.TimeCodeVITC.Process","Process bit", base.DEC, VITC_PROC, 0x80)
 
   -- EIA 708B Data mapping into VANC space (S334-1)
 
@@ -330,20 +355,36 @@ do
           ttvb(0,1):bitfield(4,4) )
         tree_data:add(F.TimeCode, timeStr)
 
-        -- VITC format
-        -- Distributed binary groups (DBB1 and DBB2) are formed by bit 3 of each UDW
-        -- TODO: do a decoder, array of bits to uint8
-        local vtvb=vitc_Table:tvb()
-        local vitc_str=string.format("0x%d%d%d%d%d%d%d%d",
-          vtvb(8,1):bitfield(7,1),
-          vtvb(9,1):bitfield(7,1),
-          vtvb(10,1):bitfield(7,1),
-          vtvb(11,1):bitfield(7,1),
-          vtvb(12,1):bitfield(7,1),
-          vtvb(13,1):bitfield(7,1),
-          vtvb(14,1):bitfield(7,1),
-          vtvb(15,1):bitfield(7,1) )
-        tree_data:add(F.VITC, vitc_str)
+
+        -- Decode DBB1 (payload type) and DBB2 (VITC status) fields
+        local dbb1=0
+        local dbb2=0
+        for x=0, (Data_Count/2)-1 do
+          -- Poor man's ((value<<1) | LSB), Lua doesn't seem to do bitwise operators...
+          -- UDW1 b3 contains LSB, UDW8 b3 contains MSB (similarly for UDW 9-16).
+          -- NOTE: Wireshark Bitfields have MSB=b0, so UDW b3 = Wireshark b4
+          dbb1=(dbb1 * 2) + ntvb(7-x,1):bitfield(4,1)
+          dbb2=(dbb2 * 2) + ntvb(15-x,1):bitfield(4,1)
+        end
+
+        -- We display DBB1 as the payload type
+        tree_data:add(F.TimeCodePT, dbb1)
+
+        -- Display the DBB2 data next, even if it isn't VITC (probably zero)
+        local tree_dbb2 = tree_data:add(F.TimeCodeVITC, dbb2)
+
+        -- Decode DBB2 (VITC) details when DBB1 == VITC
+        if (dbb1 == 0x01 or dbb1 == 0x02) then
+          local dbb2_table=ByteArray.new("00")
+          dbb2_table:set_index(0, dbb2)
+
+          local dtvbr = dbb2_table:tvb()(0,1)
+          tree_dbb2:add(F.TimeCodeVitcLineSel, dtvbr:bitfield(7-5,5))
+          tree_dbb2:add(F.TimeCodeVitcLineDup, dtvbr:bitfield(7-5,5))
+          tree_dbb2:add(F.TimeCodeVitcValidity, dtvbr:bitfield(7-5,5))
+          tree_dbb2:add(F.TimeCodeVitcProcess, dtvbr:bitfield(7-5,5))
+        end
+      -- End of timecode format parsing
 
       --
       -- Parsing EIA 708B Data mapping into VANC space (S334-1)
