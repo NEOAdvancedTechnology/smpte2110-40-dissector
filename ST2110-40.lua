@@ -227,15 +227,16 @@ do
   CC_TYPE[0xFA]="DTVCC Channel Packet Data Inactive"
 
   function st_2110_40.dissector(tvb, pinfo, tree)
-    local subtree = tree:add(st_2110_40, tvb(),"ST 2110_40 Data")
+    local length = tvb(2,2):uint() + 8 -- ST2110-40 header not included in length
+    local datatree = tree:add(st_2110_40, tvb(0,length),"ST 2110_40 Data")
     ---
     --- Read ANC RTP payload header
     ---
-    subtree:add(F.ESN, tvb(0,2))
-    subtree:add(F.Length, tvb(2,2))
-    subtree:add(F.ANC_Count, tvb(4,1))
+    datatree:add(F.ESN, tvb(0,2))
+    datatree:add(F.Length, tvb(2,2))
+    datatree:add(F.ANC_Count, tvb(4,1))
     local ANC_Count=tvb(4,1):uint()
-    subtree:add(F.F,tvb(5,1))
+    datatree:add(F.F,tvb(5,1))
     local Data_Count=0
     local offset=8
     local CS_offset=0
@@ -251,11 +252,20 @@ do
     --- Read ANC packets in payload
     ---
     for i=1,ANC_Count do
+
+      ---
+      --- C,Line_Number,Horizontal_Offset,reserved,DID,SDID,Data_Count,Checksum_Word=72
+      --- determine offset to next ANC packet, including Word_Align to 32 bit boundary
+      ---
+      local Data_Count = tvb(offset+6,2):bitfield(6,8)
+      local PacketLen_Bytes = (math.ceil((72+(Data_Count*10))/32)*4)
+      local subtree = datatree:add(tvb(offset, PacketLen_Bytes), string.format("Packet %d", i))
+
       subtree:add(F.C,tvb(offset,1))
       LN_proto=subtree:add(F.Line_Number,tvb(offset,2))
       Line_Number=tvb(offset,2):bitfield(1,11)
       if LNC[Line_Number] then
-        LN_proto:append_text(":"..LNC[Line_Number])
+        LN_proto:append_text(": "..LNC[Line_Number])
       end
       HO_proto=subtree:add(F.HO,tvb(offset+1,2))
       Horiz_Offset=tvb(offset+1,2):bitfield(4,12)
@@ -263,20 +273,23 @@ do
       subtree:add(F.StreamNum,tvb(offset+3,1))
       StreamNum=tvb(offset+2,1):bitfield(1,7)
       if HOC[Horiz_Offset] then
-        HO_proto:append_text(":"..HOC[Horiz_Offset])
+        HO_proto:append_text(": "..HOC[Horiz_Offset])
       end
       subtree:add(F.DID,tvb(offset+4,2))
       DID=tvb(offset+4,2):bitfield(2,8)
       SDID_proto=subtree:add(F.SDID,tvb(offset+5,2))
       SDID=tvb(offset+5,2):bitfield(4,8)
+      subtree:append_text(string.format(": DID 0x%02x, SDID 0x%02x", DID, SDID))
+
       if DID_SDID[DID] and not DID_SDID[DID][SDID] then
-        SDID_proto:append_text(":"..DID_SDID[DID])
+        subtree:append_text(": "..DID_SDID[DID])
+        SDID_proto:append_text(": "..DID_SDID[DID])
       end
       if DID_SDID[DID] and DID_SDID[DID][SDID] then
-        SDID_proto:append_text(":"..DID_SDID[DID][SDID])
+        subtree:append_text(": "..DID_SDID[DID][SDID])
+        SDID_proto:append_text(": "..DID_SDID[DID][SDID])
       end
       subtree:add(F.Data_Count,tvb(offset+6,2))
-      Data_Count=tvb(offset+6,2):bitfield(6,8)
 
       -- the calculation of the UDW length includes math.floor
       -- to round the numer to the smaller or equal
@@ -538,11 +551,10 @@ do
         CS_length=3
       end
       subtree:add(F.Checksum_Word,tvb(offset+6+UDW_length+CS_offset,CS_length))
-      ---
-      --- C,Line_Number,Horizontal_Offset,reserved,DID,SDID,Data_Count,Checksum_Word=72
-      --- determine offset to next ANC packet, including Word_Align to 32 bit boundary
-      ---
-      offset=offset+(math.ceil((72+(Data_Count*10))/32)*4)
+
+
+      --- Increment offset for next packet
+      offset=offset+PacketLen_Bytes
     end       -- end while
   end         -- end function
 
