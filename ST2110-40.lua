@@ -47,7 +47,7 @@ do
   F.SDID=ProtoField.uint16("st_2110_40.SDID","SDID",base.HEX,nil,0x0FF0)
   F.UDW=ProtoField.bytes("st_2110_40.UDW","UDW Bytes", base.SPACE)
   F.UDW_array=ProtoField.bytes("st_2110_40.UDW_array","UDW Array", base.SPACE)
-  F.Checksum=ProtoField.uint16("st_2110_40.Checksum","Checksum Word test",base.HEX,nil)
+  F.Checksum=ProtoField.uint16("st_2110_40.Checksum","Checksum Word",base.HEX,nil)
   F.Checksum_Calc=ProtoField.uint16("st_2110_40.Checksum_Calculated","Calculated Checksum",base.HEX,nil)
 
 -- User Data Structure
