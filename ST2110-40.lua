@@ -45,9 +45,10 @@ do
   F.StreamNum = ProtoField.uint8("st_2110_40.StreamNum","StreamNum",base.DEC,nil,0x7F)
   F.DID=ProtoField.uint16("st_2110_40.DID","DID",base.HEX,nil,0x3FC0)
   F.SDID=ProtoField.uint16("st_2110_40.SDID","SDID",base.HEX,nil,0x0FF0)
-  F.UDW=ProtoField.bytes("st_2110_40.UDW","User_Data_Words_bytes")
-  F.UDW_array=ProtoField.bytes("st_2110_40.UDW_array","User Data Words")
-  F.Checksum_Word=ProtoField.bytes("st_2110_40.Checksum_Word","Checksum_Word_bytes")
+  F.UDW=ProtoField.bytes("st_2110_40.UDW","UDW Bytes", base.SPACE)
+  F.UDW_array=ProtoField.bytes("st_2110_40.UDW_array","UDW Array", base.SPACE)
+  F.Checksum=ProtoField.uint16("st_2110_40.Checksum","Checksum Word test",base.HEX,nil)
+  F.Checksum_Calc=ProtoField.uint16("st_2110_40.Checksum_Calculated","Calculated Checksum",base.HEX,nil)
 
 -- User Data Structure
 
@@ -295,43 +296,83 @@ do
       -- to round the numer to the smaller or equal
       local UDW_length=1+math.floor(((Data_Count*10)-2)/8)
 
-      subtree:add(F.UDW,tvb(offset+7,UDW_length))
+      -- Highlight the raw UDW bytes in the data display. This includes bytes
+      -- which overlap with the Data_Count and checksum word.
+      if (((Data_Count*10)-2) % 8) then
+        subtree:add(F.UDW,tvb(offset+7,UDW_length+1))
+      else
+        subtree:add(F.UDW,tvb(offset+7,UDW_length))
+      end
 
-      local data_Table=ByteArray.new()
 
-      --
+      -- Extract the user data words from the payload.
       -- User Data Words is an array of 10 bits words
       -- For each 10 bits words, 2 MSB bits (b8 and b9)
       -- are bits used to error detection.
-      -- These bits won't be extracted in the byte Array.
-      --
-      local c=0
-      local it=0
-      local off=8
+      -- These bits won't be extracted in the byte Array,
+      -- but we extract b8 to include it in the checksum.
+
+      local data_Table=ByteArray.new()
       data_Table:set_size(Data_Count)
-      for i=0,UDW_length-1 do
-        if (i % 5 == 0) then
-          c=tvb(offset+off+i,2):bitfield(0,8)
-        elseif (i % 5 == 1) then
-          c=tvb(offset+off+i,2):bitfield(2,8)
-        elseif (i % 5 == 2) then
-          c=tvb(offset+off+i,2):bitfield(4,8)
-        elseif (i % 5 == 3) then
-          c=tvb(offset+off+i,2):bitfield(6,8)
-        elseif (i % 5 == 4 ) then
-          -- do nothing, skip to next word
+
+      -- Initialise checksum with 9 LSBs of DID, SDID, Data_Count
+      local cs_calc = tvb(offset+4,2):bitfield(1,9) + -- DID
+                      tvb(offset+5,2):bitfield(3,9) + -- SDID
+                      tvb(offset+6,2):bitfield(5,9)   -- Data_Count
+      local dw_off=offset+7
+      local dw_rem=6
+
+      for i=0,Data_Count-1 do
+        local v
+        -- +1 here to ignore the MSB (b9)
+        v=tvb(dw_off,2):bitfield(dw_rem+1,9)
+
+        -- Checksum includes sum of bits 8:0 of all UDWs
+        cs_calc=cs_calc+v
+        -- UDW table contains the 8 LSBs of each UDW
+        data_Table:set_index(i,(v % 256))
+
+        if (dw_rem == 6) then
+          -- Data word ends on byte boundary, no overlap with next UDW
+          dw_off=dw_off+2
+          dw_rem=0
         else
-          error("Problem")
-        end
-        if (it<Data_Count and (i % 5 ~= 4) ) then
-          data_Table:set_index(it,c)
-          it = it+1
+          dw_off=dw_off+1
+          dw_rem=dw_rem+2
         end
       end
 
+
+      -- Extract the checksum value (immediately after the last UDW)
+      local cs_received=tvb(dw_off,2):bitfield(dw_rem,10)
+      local cs_item=subtree:add(F.Checksum,tvb(dw_off,2),cs_received,string.format("Checksum Word: 0x%03x", cs_received))
+
+
+      -- Finish the checksum calculation and attach the result to the received checksum.
+      -- Checksum value is sum[8:0], b9= ~b8
+      cs_calc=(cs_calc % 0x200) -- wrap at 9 LSBs
+      if (math.floor(cs_calc / 0x100) == 0) then
+        cs_calc=cs_calc+0x200
+      end
+      cs_item:add(F.Checksum_Calc, cs_calc, string.format("Calculated Checksum: 0x%03x", cs_calc)):set_generated()
+
+      -- Add warning if checksum validation failed
+      if cs_received ~= cs_calc then
+        -- Invalid payload checksum
+        cs_item:add_expert_info(PI_CHECKSUM,PI_WARN,"The calculated ANC checksum and ANC checksum word do not match.")
+      end
+
+
+      -- Add the decoded UDW array to the dissector output
       local ntvb=ByteArray.tvb(data_Table, "UDW Array")
       local tree_data = subtree:add(F.UDW_array, ntvb())
-      tree_data:set_text("UDW")
+      tree_data:set_generated()
+
+
+
+      --
+      -- Protocol specific decodes below this point
+      ----------------------------------------------
 
       --
       -- Parsing time code DID=0x60 and SDID=0x60
@@ -534,19 +575,6 @@ do
           end   -- end if CDPSection = 0x72
         end     -- end for CDP Section
       end       -- end if DID
-
-      CS_offset=0
-      CS_length=2
-      UDW_bits=(Data_Count*10)-2
-      if (UDW_bits % 8 == 0) then
-        CS_offset = 1
-      else
-        CS_offset=0
-      end
-      if (UDW_bits % 8 == 7) then
-        CS_length=3
-      end
-      subtree:add(F.Checksum_Word,tvb(offset+6+UDW_length+CS_offset,CS_length))
 
 
       --- Increment offset for next packet
