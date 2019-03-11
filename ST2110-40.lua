@@ -356,7 +356,7 @@ do
         -- Timecode format
         -- (UDW-15 & UDW-13)hours | (UDW-11 & UDW-9)minutes | (UDW-7 & UDW-5)seconds |
         -- (UDW-3 & UDW-1)frames
-        local ttvb=time_Table:tvb()
+        local ttvb=ByteArray.tvb(time_Table, "TimeCode")
         local timeStr = string.format("%d%dH:%d%dm:%d%ds:%d%dframes",
           ttvb(14,1):bitfield(6,2),
           ttvb(12,1):bitfield(4,4),
@@ -366,7 +366,7 @@ do
           ttvb(4,1):bitfield(4,4),
           ttvb(2,1):bitfield(6,2),
           ttvb(0,1):bitfield(4,4) )
-        tree_data:add(F.TimeCode, timeStr)
+        tree_data:add(F.TimeCode, ttvb(), timeStr):set_generated()
 
 
         -- Decode DBB1 (payload type) and DBB2 (VITC status) fields
@@ -381,21 +381,17 @@ do
         end
 
         -- We display DBB1 as the payload type
-        tree_data:add(F.TimeCodePT, dbb1)
+        tree_data:add(F.TimeCodePT, dbb1):set_generated()
 
         -- Display the DBB2 data next, even if it isn't VITC (probably zero)
-        local tree_dbb2 = tree_data:add(F.TimeCodeVITC, dbb2)
+        local tree_dbb2 = tree_data:add(F.TimeCodeVITC, dbb2):set_generated()
 
         -- Decode DBB2 (VITC) details when DBB1 == VITC
         if (dbb1 == 0x01 or dbb1 == 0x02) then
-          local dbb2_table=ByteArray.new("00")
-          dbb2_table:set_index(0, dbb2)
-
-          local dtvbr = dbb2_table:tvb()(0,1)
-          tree_dbb2:add(F.TimeCodeVitcLineSel, dtvbr:bitfield(7-5,5))
-          tree_dbb2:add(F.TimeCodeVitcLineDup, dtvbr:bitfield(7-5,5))
-          tree_dbb2:add(F.TimeCodeVitcValidity, dtvbr:bitfield(7-5,5))
-          tree_dbb2:add(F.TimeCodeVitcProcess, dtvbr:bitfield(7-5,5))
+          tree_dbb2:add(F.TimeCodeVitcLineSel, dbb2):set_generated()
+          tree_dbb2:add(F.TimeCodeVitcLineDup, dbb2):set_generated()
+          tree_dbb2:add(F.TimeCodeVitcValidity, dbb2):set_generated()
+          tree_dbb2:add(F.TimeCodeVitcProcess, dbb2):set_generated()
         end
       -- End of timecode format parsing
 
