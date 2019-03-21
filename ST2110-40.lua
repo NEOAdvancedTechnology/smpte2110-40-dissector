@@ -45,9 +45,10 @@ do
   F.StreamNum = ProtoField.uint8("st_2110_40.StreamNum","StreamNum",base.DEC,nil,0x7F)
   F.DID=ProtoField.uint16("st_2110_40.DID","DID",base.HEX,nil,0x3FC0)
   F.SDID=ProtoField.uint16("st_2110_40.SDID","SDID",base.HEX,nil,0x0FF0)
-  F.UDW=ProtoField.bytes("st_2110_40.UDW","User_Data_Words_bytes")
-  F.UDW_array=ProtoField.bytes("st_2110_40.UDW_array","User Data Words")
-  F.Checksum_Word=ProtoField.bytes("st_2110_40.Checksum_Word","Checksum_Word_bytes")
+  F.UDW=ProtoField.bytes("st_2110_40.UDW","UDW Bytes", base.SPACE)
+  F.UDW_array=ProtoField.bytes("st_2110_40.UDW_array","UDW Array", base.SPACE)
+  F.Checksum=ProtoField.uint16("st_2110_40.Checksum","Checksum Word",base.HEX,nil)
+  F.Checksum_Calc=ProtoField.uint16("st_2110_40.Checksum_Calculated","Calculated Checksum",base.HEX,nil)
 
 -- User Data Structure
 
@@ -59,8 +60,33 @@ do
   F.CDP_Seq_Counter=ProtoField.uint16("st_2110_40.Data.CDP_Seq_Counter","CDP Sequence Counter", base.HEX,nil)
 
   -- Ancillary Time Code (S12M-2)
+  local ANC_DBB1={}
+  for i=0,255 do
+    if     (i == 0x00) then ANC_DBB1[i]="Linear time code (ATC_LTC)"
+    elseif (i == 0x01) then ANC_DBB1[i]="Vertical interval time code #1 (ATC_VITC1)"
+    elseif (i == 0x02) then ANC_DBB1[i]="Vertical interval time code #2 (ATC_VITC2)"
+    elseif (i <= 0x05) then ANC_DBB1[i]="User defined"
+    elseif (i == 0x06) then ANC_DBB1[i]="Film data block (transferred from reader)"
+    elseif (i == 0x07) then ANC_DBB1[i]="Production data block (transferred from reader)"
+    elseif (i <= 0x7C) then ANC_DBB1[i]="Locally generated time address and user data (user defined)"
+    elseif (i == 0x7D) then ANC_DBB1[i]="Video tape data block (locally generated)"
+    elseif (i == 0x7E) then ANC_DBB1[i]="Film data block (locally generated)"
+    elseif (i == 0x7F) then ANC_DBB1[i]="Production data block (locally generated)"
+    else                    ANC_DBB1[i]="Reserved"
+    end
+  end
+
   F.TimeCode=ProtoField.string("st_2110_40.Data.TimeCode","TimeCode")
-  F.VITC=ProtoField.string("st_2110_40.Data.VITC","VITC")
+  F.TimeCodePT=ProtoField.uint8("st_2110_40.Data.TimeCodePT","Payload Type", base.HEX, ANC_DBB1)
+  F.TimeCodeVITC=ProtoField.uint8("st_2110_40.Data.TimeCodeVITC","VITC Data", base.HEX, nil)
+  F.TimeCodeVitcLineSel=ProtoField.uint8("st_2110_40.Data.TimeCodeVITC.LineSel","Line Select", base.DEC, nil, 0x1F)
+  F.TimeCodeVitcLineDup=ProtoField.uint8("st_2110_40.Data.TimeCodeVITC.LineDup","Duplication", base.BOOL, nil, 0x20)
+  local VITC_VLD = {[0] = "No time code error received or locally generated time code address",
+                    [1] = "Transmitted time code interpolated from previous time code (received a time code error)"}
+  F.TimeCodeVitcValidity=ProtoField.uint8("st_2110_40.Data.TimeCodeVITC.Validity","TC Validity", base.DEC, VITC_VLD, 0x40)
+  local VITC_PROC = {[0] = "Binary groups in time code data stream are processed to compensate for latency",
+                     [1] = "Binary groups in time code data stream are only retransmitted (no delay compensation)"}
+  F.TimeCodeVitcProcess=ProtoField.uint8("st_2110_40.Data.TimeCodeVITC.Process","Process bit", base.DEC, VITC_PROC, 0x80)
 
   -- EIA 708B Data mapping into VANC space (S334-1)
 
@@ -202,15 +228,16 @@ do
   CC_TYPE[0xFA]="DTVCC Channel Packet Data Inactive"
 
   function st_2110_40.dissector(tvb, pinfo, tree)
-    local subtree = tree:add(st_2110_40, tvb(),"ST 2110_40 Data")
+    local length = tvb(2,2):uint() + 8 -- ST2110-40 header not included in length
+    local datatree = tree:add(st_2110_40, tvb(0,length),"ST 2110_40 Data")
     ---
     --- Read ANC RTP payload header
     ---
-    subtree:add(F.ESN, tvb(0,2))
-    subtree:add(F.Length, tvb(2,2))
-    subtree:add(F.ANC_Count, tvb(4,1))
+    datatree:add(F.ESN, tvb(0,2))
+    datatree:add(F.Length, tvb(2,2))
+    datatree:add(F.ANC_Count, tvb(4,1))
     local ANC_Count=tvb(4,1):uint()
-    subtree:add(F.F,tvb(5,1))
+    datatree:add(F.F,tvb(5,1))
     local Data_Count=0
     local offset=8
     local CS_offset=0
@@ -226,11 +253,20 @@ do
     --- Read ANC packets in payload
     ---
     for i=1,ANC_Count do
+
+      ---
+      --- C,Line_Number,Horizontal_Offset,reserved,DID,SDID,Data_Count,Checksum_Word=72
+      --- determine offset to next ANC packet, including Word_Align to 32 bit boundary
+      ---
+      local Data_Count = tvb(offset+6,2):bitfield(6,8)
+      local PacketLen_Bytes = (math.ceil((72+(Data_Count*10))/32)*4)
+      local subtree = datatree:add(tvb(offset, PacketLen_Bytes), string.format("Packet %d", i))
+
       subtree:add(F.C,tvb(offset,1))
       LN_proto=subtree:add(F.Line_Number,tvb(offset,2))
       Line_Number=tvb(offset,2):bitfield(1,11)
       if LNC[Line_Number] then
-        LN_proto:append_text(":"..LNC[Line_Number])
+        LN_proto:append_text(": "..LNC[Line_Number])
       end
       HO_proto=subtree:add(F.HO,tvb(offset+1,2))
       Horiz_Offset=tvb(offset+1,2):bitfield(4,12)
@@ -238,62 +274,105 @@ do
       subtree:add(F.StreamNum,tvb(offset+3,1))
       StreamNum=tvb(offset+2,1):bitfield(1,7)
       if HOC[Horiz_Offset] then
-        HO_proto:append_text(":"..HOC[Horiz_Offset])
+        HO_proto:append_text(": "..HOC[Horiz_Offset])
       end
       subtree:add(F.DID,tvb(offset+4,2))
       DID=tvb(offset+4,2):bitfield(2,8)
       SDID_proto=subtree:add(F.SDID,tvb(offset+5,2))
       SDID=tvb(offset+5,2):bitfield(4,8)
+      subtree:append_text(string.format(": DID 0x%02x, SDID 0x%02x", DID, SDID))
+
       if DID_SDID[DID] and not DID_SDID[DID][SDID] then
-        SDID_proto:append_text(":"..DID_SDID[DID])
+        subtree:append_text(": "..DID_SDID[DID])
+        SDID_proto:append_text(": "..DID_SDID[DID])
       end
       if DID_SDID[DID] and DID_SDID[DID][SDID] then
-        SDID_proto:append_text(":"..DID_SDID[DID][SDID])
+        subtree:append_text(": "..DID_SDID[DID][SDID])
+        SDID_proto:append_text(": "..DID_SDID[DID][SDID])
       end
       subtree:add(F.Data_Count,tvb(offset+6,2))
-      Data_Count=tvb(offset+6,2):bitfield(6,8)
 
       -- the calculation of the UDW length includes math.floor
       -- to round the numer to the smaller or equal
       local UDW_length=1+math.floor(((Data_Count*10)-2)/8)
 
-      subtree:add(F.UDW,tvb(offset+7,UDW_length))
+      -- Highlight the raw UDW bytes in the data display. This includes bytes
+      -- which overlap with the Data_Count and checksum word.
+      if (((Data_Count*10)-2) % 8) then
+        subtree:add(F.UDW,tvb(offset+7,UDW_length+1))
+      else
+        subtree:add(F.UDW,tvb(offset+7,UDW_length))
+      end
 
-      local data_Table=ByteArray.new()
 
-      --
+      -- Extract the user data words from the payload.
       -- User Data Words is an array of 10 bits words
       -- For each 10 bits words, 2 MSB bits (b8 and b9)
       -- are bits used to error detection.
-      -- These bits won't be extracted in the byte Array.
-      --
-      local c=0
-      local it=0
-      local off=8
+      -- These bits won't be extracted in the byte Array,
+      -- but we extract b8 to include it in the checksum.
+
+      local data_Table=ByteArray.new()
       data_Table:set_size(Data_Count)
-      for i=0,UDW_length-1 do
-        if (i % 5 == 0) then
-          c=tvb(offset+off+i,2):bitfield(0,8)
-        elseif (i % 5 == 1) then
-          c=tvb(offset+off+i,2):bitfield(2,8)
-        elseif (i % 5 == 2) then
-          c=tvb(offset+off+i,2):bitfield(4,8)
-        elseif (i % 5 == 3) then
-          c=tvb(offset+off+i,2):bitfield(6,8)
-        elseif (i % 5 == 4 ) then
-          -- do nothing, skip to next word
+
+      -- Initialise checksum with 9 LSBs of DID, SDID, Data_Count
+      local cs_calc = tvb(offset+4,2):bitfield(1,9) + -- DID
+                      tvb(offset+5,2):bitfield(3,9) + -- SDID
+                      tvb(offset+6,2):bitfield(5,9)   -- Data_Count
+      local dw_off=offset+7
+      local dw_rem=6
+
+      for i=0,Data_Count-1 do
+        local v
+        -- +1 here to ignore the MSB (b9)
+        v=tvb(dw_off,2):bitfield(dw_rem+1,9)
+
+        -- Checksum includes sum of bits 8:0 of all UDWs
+        cs_calc=cs_calc+v
+        -- UDW table contains the 8 LSBs of each UDW
+        data_Table:set_index(i,(v % 256))
+
+        if (dw_rem == 6) then
+          -- Data word ends on byte boundary, no overlap with next UDW
+          dw_off=dw_off+2
+          dw_rem=0
         else
-          error("Problem")
-        end
-        if (it<Data_Count and (i % 5 ~= 4) ) then
-          data_Table:set_index(it,c)
-          it = it+1
+          dw_off=dw_off+1
+          dw_rem=dw_rem+2
         end
       end
 
+
+      -- Extract the checksum value (immediately after the last UDW)
+      local cs_received=tvb(dw_off,2):bitfield(dw_rem,10)
+      local cs_item=subtree:add(F.Checksum,tvb(dw_off,2),cs_received,string.format("Checksum Word: 0x%03x", cs_received))
+
+
+      -- Finish the checksum calculation and attach the result to the received checksum.
+      -- Checksum value is sum[8:0], b9= ~b8
+      cs_calc=(cs_calc % 0x200) -- wrap at 9 LSBs
+      if (math.floor(cs_calc / 0x100) == 0) then
+        cs_calc=cs_calc+0x200
+      end
+      cs_item:add(F.Checksum_Calc, cs_calc, string.format("Calculated Checksum: 0x%03x", cs_calc)):set_generated()
+
+      -- Add warning if checksum validation failed
+      if cs_received ~= cs_calc then
+        -- Invalid payload checksum
+        cs_item:add_expert_info(PI_CHECKSUM,PI_WARN,"The calculated ANC checksum and ANC checksum word do not match.")
+      end
+
+
+      -- Add the decoded UDW array to the dissector output
       local ntvb=ByteArray.tvb(data_Table, "UDW Array")
       local tree_data = subtree:add(F.UDW_array, ntvb())
-      tree_data:set_text("UDW")
+      tree_data:set_generated()
+
+
+
+      --
+      -- Protocol specific decodes below this point
+      ----------------------------------------------
 
       --
       -- Parsing time code DID=0x60 and SDID=0x60
@@ -318,7 +397,7 @@ do
         -- Timecode format
         -- (UDW-15 & UDW-13)hours | (UDW-11 & UDW-9)minutes | (UDW-7 & UDW-5)seconds |
         -- (UDW-3 & UDW-1)frames
-        local ttvb=time_Table:tvb()
+        local ttvb=ByteArray.tvb(time_Table, "TimeCode")
         local timeStr = string.format("%d%dH:%d%dm:%d%ds:%d%dframes",
           ttvb(14,1):bitfield(6,2),
           ttvb(12,1):bitfield(4,4),
@@ -328,22 +407,34 @@ do
           ttvb(4,1):bitfield(4,4),
           ttvb(2,1):bitfield(6,2),
           ttvb(0,1):bitfield(4,4) )
-        tree_data:add(F.TimeCode, timeStr)
+        tree_data:add(F.TimeCode, ttvb(), timeStr):set_generated()
 
-        -- VITC format
-        -- Distributed binary groups (DBB1 and DBB2) are formed by bit 3 of each UDW
-        -- TODO: do a decoder, array of bits to uint8
-        local vtvb=vitc_Table:tvb()
-        local vitc_str=string.format("0x%d%d%d%d%d%d%d%d",
-          vtvb(8,1):bitfield(7,1),
-          vtvb(9,1):bitfield(7,1),
-          vtvb(10,1):bitfield(7,1),
-          vtvb(11,1):bitfield(7,1),
-          vtvb(12,1):bitfield(7,1),
-          vtvb(13,1):bitfield(7,1),
-          vtvb(14,1):bitfield(7,1),
-          vtvb(15,1):bitfield(7,1) )
-        tree_data:add(F.VITC, vitc_str)
+
+        -- Decode DBB1 (payload type) and DBB2 (VITC status) fields
+        local dbb1=0
+        local dbb2=0
+        for x=0, (Data_Count/2)-1 do
+          -- Poor man's ((value<<1) | LSB), Lua doesn't seem to do bitwise operators...
+          -- UDW1 b3 contains LSB, UDW8 b3 contains MSB (similarly for UDW 9-16).
+          -- NOTE: Wireshark Bitfields have MSB=b0, so UDW b3 = Wireshark b4
+          dbb1=(dbb1 * 2) + ntvb(7-x,1):bitfield(4,1)
+          dbb2=(dbb2 * 2) + ntvb(15-x,1):bitfield(4,1)
+        end
+
+        -- We display DBB1 as the payload type
+        tree_data:add(F.TimeCodePT, dbb1):set_generated()
+
+        -- Display the DBB2 data next, even if it isn't VITC (probably zero)
+        local tree_dbb2 = tree_data:add(F.TimeCodeVITC, dbb2):set_generated()
+
+        -- Decode DBB2 (VITC) details when DBB1 == VITC
+        if (dbb1 == 0x01 or dbb1 == 0x02) then
+          tree_dbb2:add(F.TimeCodeVitcLineSel, dbb2):set_generated()
+          tree_dbb2:add(F.TimeCodeVitcLineDup, dbb2):set_generated()
+          tree_dbb2:add(F.TimeCodeVitcValidity, dbb2):set_generated()
+          tree_dbb2:add(F.TimeCodeVitcProcess, dbb2):set_generated()
+        end
+      -- End of timecode format parsing
 
       --
       -- Parsing EIA 708B Data mapping into VANC space (S334-1)
@@ -403,6 +494,7 @@ do
             local value = 0
             local buffer_size=0
 
+            local cdp_offset=s+2
             s=s+2   -- section type + section count
             dSize=dataSection_Count*3
             s=s+dSize
@@ -421,12 +513,12 @@ do
 
               -- parsing CC_Data type
               -- TODO: maybe take the 2 LSB bits
-              CDP_CC_Type=ntvb(offset+n,1):bitfield(0,8)
+              CDP_CC_Type=ntvb(cdp_offset+n,1):bitfield(0,8)
               CC_type_str=tree_data:add(F.CCType, CDP_CC_Type)
               if CC_TYPE[CDP_CC_Type] then
                 CC_type_str:append_text(": "..CC_TYPE[CDP_CC_Type])
               end
-              value=ntvb(offset+n+1,2)
+              value=ntvb(cdp_offset+n+1,2)
               tree_data:add(F.CCValue,value)
 
               -- The first CDP_CC_Type is the service designated
@@ -440,8 +532,8 @@ do
               -- Service 2 is the Secondary Language Service
               -- We collect only data from the first service (serviceNb==0xfc)
               if CDP_CC_Type == 0xFE and serviceNb == 0xFC then
-                CC_concat:set_index(buffer_size*2, ntvb(offset+n+1,1):bitfield(0,8))
-                CC_concat:set_index(buffer_size*2+1, ntvb(offset+n+2,1):bitfield(0,8))
+                CC_concat:set_index(buffer_size*2, ntvb(cdp_offset+n+1,1):bitfield(0,8))
+                CC_concat:set_index(buffer_size*2+1, ntvb(cdp_offset+n+2,1):bitfield(0,8))
                 buffer_size=buffer_size+1
               end
               n=n+3
@@ -484,23 +576,9 @@ do
         end     -- end for CDP Section
       end       -- end if DID
 
-      CS_offset=0
-      CS_length=2
-      UDW_bits=(Data_Count*10)-2
-      if (UDW_bits % 8 == 0) then
-        CS_offset = 1
-      else
-        CS_offset=0
-      end
-      if (UDW_bits % 8 == 7) then
-        CS_length=3
-      end
-      subtree:add(F.Checksum_Word,tvb(offset+6+UDW_length+CS_offset,CS_length))
-      ---
-      --- C,Line_Number,Horizontal_Offset,reserved,DID,SDID,Data_Count,Checksum_Word=72
-      --- determine offset to next ANC packet, including Word_Align to 32 bit boundary
-      ---
-      offset=offset+(math.ceil((72+(Data_Count*10))/32)*4)
+
+      --- Increment offset for next packet
+      offset=offset+PacketLen_Bytes
     end       -- end while
   end         -- end function
 
