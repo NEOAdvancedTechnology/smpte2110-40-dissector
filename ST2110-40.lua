@@ -59,6 +59,86 @@ do
   F.CDP_Section_Type=ProtoField.uint8("st_2110_40.Data.Section_Type","CDP Section Type", base.HEX,nil)
   F.CDP_Seq_Counter=ProtoField.uint16("st_2110_40.Data.CDP_Seq_Counter","CDP Sequence Counter", base.HEX,nil)
 
+  -- VBI data
+  -- Spec: EN 301 775 - V1.2.1
+  local PES_DATA_ID = {}
+  for i=0,255 do
+    if (i >= 0x10 and i <= 0x1F or i >= 0x99 and i <= 0x9B) then PES_DATA_ID[i] =  "EBU Teletext/VPS/WSS/CC/VBI sample data"
+    elseif (i >= 0x80 and i <= 0x98 or i >= 0x9C and i <= 0xFF) then PES_DATA_ID[i] = "User defined"
+    else PES_DATA_ID[i] = "Reserved for future use"
+    end
+  end
+  F.Data_Identifier=ProtoField.uint8("st_2110_40.Data.Data_Identifier", "Data Identifier", base.HEX, PES_DATA_ID)
+
+  -- Spec: ST2031-2007
+  local PES_DATA_UNIT_ID = {}
+  for i=0,255 do
+    if (i == 0x00 or i == 0x01) then PES_DATA_UNIT_ID[i] = "DVB reserved"
+    elseif (i == 0x02) then PES_DATA_UNIT_ID[i] = "EBU Teletext non-subtitle data"
+    elseif (i == 0x03) then PES_DATA_UNIT_ID[i] = "EBU Teletext subtitle data"
+    elseif (i >= 0x04 or i <= 0x7F) then PES_DATA_UNIT_ID[i] = "DVB reserved"
+    elseif (i >= 0x80 or i <= 0xBF) then PES_DATA_UNIT_ID[i] = "User defined"
+    elseif (i == 0xC0) then PES_DATA_UNIT_ID[i] = "Inverted Teletext"
+    elseif (i == 0xC1 or i == 0xC2) then PES_DATA_UNIT_ID[i] = "DVB reserved"
+    elseif (i == 0xC3) then PES_DATA_UNIT_ID[i] = "VPS"
+    elseif (i == 0xC4) then PES_DATA_UNIT_ID[i] = "WSS"
+    elseif (i == 0xC5) then PES_DATA_UNIT_ID[i] = "CEA-608 Closed Captioning"
+    elseif (i == 0xC6) then PES_DATA_UNIT_ID[i] = "monochrome 4:2:2 samples"
+    elseif (i >= 0xC7 or i <= 0xCF) then PES_DATA_UNIT_ID[i] = "User defined"
+    elseif (i == 0xD0) then PES_DATA_UNIT_ID[i] = "AMOL48"
+    elseif (i == 0xD1) then PES_DATA_UNIT_ID[i] = "AMOL96"
+    elseif (i == 0xD2 or i >= 0xDA and i <= 0xE5) then PES_DATA_UNIT_ID[i] = "SCTE reserved"
+    elseif (i == 0xD3 or i == 0xD4 or i == 0xD8) then PES_DATA_UNIT_ID[i] = "Protected"
+    elseif (i == 0xD5) then PES_DATA_UNIT_ID[i] = "NABTS"
+    elseif (i == 0xD6) then PES_DATA_UNIT_ID[i] = "TVG2X"
+    elseif (i == 0xD7) then PES_DATA_UNIT_ID[i] = "Copy Protection"
+    elseif (i == 0xD9) then PES_DATA_UNIT_ID[i] = "VITC"
+    elseif (i >= 0xE6 and i <= 0xFE) then PES_DATA_UNIT_ID[i] = "SCTE USer defined"
+    elseif (i == 0xFF) then PES_DATA_UNIT_ID[i] = "MPEG stuffing"
+    else PES_DATA_UNIT_ID[i] = "Reserved or user defined"
+    end 
+  end
+  F.Data_UnitId=ProtoField.uint8("st_2110_40.Data.Data_UnitId", "Data Unit Id", base.HEX, PES_DATA_UNIT_ID)
+  F.Data_UnitLength=ProtoField.uint8("st_2110_40.Data.Data_UnitLength", "Data Unit Length", base.DEC)
+
+  -- Spec: EN 300 472
+  F.Field_Parity = ProtoField.bool("st_2110_40.Data.Field_Parity", "Field Parity", 8, {"First field of a frame", "Second field of a frame"}, 0x20)
+  F.Line_Offset = ProtoField.uint8("st_2110_40.Data.Line_Offset", "Line Offset", base.DEC, nil, 0x1F)
+
+  -- Spec: EN 300 706
+  F.Framing_Code = ProtoField.uint8("st_2110_40.Data.Framing_Code", "Framing Code", base.DEC, nil, 0xFF)
+  F.Magazine_Hamming = ProtoField.uint16("st_2110_40.Data.Magazine_Hamming", "Magazine (Hamming 8/4)", base.DEC, nil, 0xFC00)
+  F.Magazine = ProtoField.uint8("st_2110_40.Data.Magazine", "Magazine", base.DEC, nil)
+  F.PacketNumber_Hamming = ProtoField.uint16("st_2110_40.Data.PacketNumber_Hamming", "Packet Number (Hamming 8/4)", base.DEC, nil, 0x3FF)
+  F.PacketNumber = ProtoField.uint8("st_2110_40.Data.PacketNumber", "Packet Number", base.DEC, nil)
+  F.PageUnits_Hamming = ProtoField.uint8("st_2110_40.Data.PageUnits_Hamming", "Page Units (Hamming 8/4)", base.HEX, nil, 0xFF)
+  F.PageUnits = ProtoField.uint8("st_2110_40.Data.PageUnits", "Page Units", base.HEX, nil)
+
+  F.PageTens_Hamming = ProtoField.uint8("st_2110_40.Data.PageTens_Hamming", "Page Tens (Hamming 8/4)", base.HEX, nil, 0xFF)
+  F.PageTens = ProtoField.uint8("st_2110_40.Data.PageTens", "Page Tens", base.HEX, nil)
+
+  F.DataString = ProtoField.string("st_2110_40.Data.Data_String", "Data String")
+  F.TextData_Array = ProtoField.bytes("st_2110_40.Data.Textdata","Text Data", base.SPACE)
+
+  local NATIONAL_SUBSET = {
+    [0] = "English",
+    [1] = "German",
+    [4] = "Swedish/Finnish/Hungarian",
+    [5] = "Italian",
+    [0x10] = "French",
+    [0x11] = "Portuguese/Spanish",
+    [0x14] = "Czech/Slovak"
+  }
+  F.ErasePage = ProtoField.bool("st_2110_40.Data.ErasePage", "Erase Page", 8, nil, 0x01)
+  F.Newsflash = ProtoField.bool("st_2110_40.Data.Newsflash", "Newsflash", 8, nil, 0x04)
+  F.Subtitle = ProtoField.bool("st_2110_40.Data.Subtitle", "Subtitle", 8, {"Subtitle", "Non-subtitle"}, 0x01)
+  F.SuppressHeader = ProtoField.bool("st_2110_40.Data.SuppressHeader", "Suppress Header", 8, nil, 0x40)
+  F.UpdateIndicator = ProtoField.bool("st_2110_40.Data.UpdateIndicator", "Update Indicator", 8, nil, 0x10)
+  F.InterruptedSequence = ProtoField.bool("st_2110_40.Data.InterruptedSequence", "Interrupted Sequence", 8, nil, 0x04)
+  F.InhibitDisplay = ProtoField.bool("st_2110_40.Data.InhibitDisplay", "Inhibit Display", 8, nil, 0x01)
+  F.MagazineSerial = ProtoField.bool("st_2110_40.Data.MagazineSerial", "MagazineSerial", 8, {"Serial Mode", "Parallel Mode"}, 0x40)
+  F.CharacterSet = ProtoField.uint8("st_2110_40.Data.CharacterSet", "Character Subset", base.DEC, NATIONAL_SUBSET, 0x15)
+
   -- Ancillary Time Code (S12M-2)
   local ANC_DBB1={}
   for i=0,255 do
@@ -226,6 +306,10 @@ do
   CC_TYPE[0xFE]="DTVCC Channel Packet Data"
   CC_TYPE[0xFF]="DTVCC Channel Packet Start"
   CC_TYPE[0xFA]="DTVCC Channel Packet Data Inactive"
+
+dprint = function(...)
+    print(table.concat({"Lua:", ...}," "))
+end
 
   function st_2110_40.dissector(tvb, pinfo, tree)
     local length = tvb(2,2):uint() + 8 -- ST2110-40 header not included in length
@@ -574,6 +658,97 @@ do
             s=s+1
           end   -- end if CDPSection = 0x72
         end     -- end for CDP Section
+      elseif ( DID==0x41 and SDID==0x08 ) then
+        tree_data:add(F.Data_Identifier, ntvb(0, 1))
+        tree_data:add(F.Data_UnitId, ntvb(1, 1))
+        local unitId = ntvb(1, 1):uint()
+        -- EBU Teletext
+        if (unitId == 0x02 or unitId == 0x03) then
+          tree_data:add(F.Data_UnitLength, ntvb(2, 1))
+          tree_data:add(F.Field_Parity, ntvb(3, 1))
+          tree_data:add(F.Line_Offset, ntvb(3, 1))
+          tree_data:add(F.Framing_Code, ntvb(4, 1))
+          --Checkpoint: In this code Packet Address starts with byte indexed 5
+          --In the Spec it starts from byte 4.
+          --So in order to find out what index to use here, take index from Spec + 1
+          local packet_address_tvb = ntvb(5, 2)
+          tree_data:add(F.Magazine_Hamming, packet_address_tvb)
+          local magazine = packet_address_tvb:bitfield(1,1) +
+                          2*packet_address_tvb:bitfield(3,1) +
+                          4*packet_address_tvb:bitfield(5,1)
+          tree_data:add(F.Magazine, magazine):set_generated()
+
+          tree_data:add(F.PacketNumber_Hamming, packet_address_tvb)
+          local packet_number = packet_address_tvb:bitfield(7,1) +
+                                2*packet_address_tvb:bitfield(9,1) + 
+                                4*packet_address_tvb:bitfield(11,1) +
+                                8*packet_address_tvb:bitfield(13,1) + 
+                                16*packet_address_tvb:bitfield(15,1)
+          tree_data:add(F.PacketNumber, packet_number):set_generated()
+          local data_start_offset = 0
+          local number_of_data_bytes = 0
+          if (packet_number == 0) then
+            data_start_offset = 15
+            number_of_data_bytes = 32
+            -- Extracting Page Units and Page Tens
+            local page_units_hamming = ntvb(7, 1)
+            local page_units = page_units_hamming:bitfield(1,1) +
+                              2*page_units_hamming:bitfield(3,1) +
+                              4*page_units_hamming:bitfield(5,1) +
+                              8*page_units_hamming:bitfield(7,1)
+
+            local page_tens_hamming = ntvb(8, 1)
+            local page_tens = page_tens_hamming:bitfield(1,1) +
+                              2*page_tens_hamming:bitfield(3,1) +
+                              4*page_tens_hamming:bitfield(5,1) +
+                              8*page_tens_hamming:bitfield(7,1)
+            tree_data:add(F.PageUnits_Hamming, page_units_hamming)
+            tree_data:add(F.PageTens_Hamming, page_tens_hamming)
+            tree_data:add(F.PageUnits, page_units):set_generated()
+            tree_data:add(F.PageTens, page_tens):set_generated()
+
+            -- Control bytes
+            tree_data:add(F.ErasePage, ntvb(10,1))
+            tree_data:add(F.Newsflash, ntvb(12,1))
+            tree_data:add(F.Subtitle, ntvb(12,1))
+            tree_data:add(F.SuppressHeader, ntvb(13,1))
+            tree_data:add(F.UpdateIndicator, ntvb(13,1))
+            tree_data:add(F.InterruptedSequence, ntvb(13,1))
+            tree_data:add(F.InhibitDisplay, ntvb(13,1))
+            tree_data:add(F.MagazineSerial, ntvb(14,1))
+            tree_data:add(F.CharacterSet, ntvb(14,1))
+
+          elseif (packet_number >= 1 and packet_number <=25) then
+            data_start_offset = 7
+            number_of_data_bytes = 40
+          end
+
+          local text_data=ByteArray.new()
+          text_data:set_size(number_of_data_bytes)
+          
+          local data_string = ""
+          -- ETS 300 706, Page 26
+          for data_index=0,number_of_data_bytes-1 do
+            -- Getting rid of parity bit
+            local data_byte = ntvb(data_start_offset + data_index, 1)
+            local data_char = data_byte:bitfield(0,1) + 
+                                      2*data_byte:bitfield(1,1) + 
+                                      4*data_byte:bitfield(2,1) + 
+                                      8*data_byte:bitfield(3,1) + 
+                                      16*data_byte:bitfield(4,1) + 
+                                      32*data_byte:bitfield(5,1) + 
+                                      64*data_byte:bitfield(6,1)
+            text_data:set_index(data_index, data_char)
+            data_string = data_string .. string.char(data_char)
+          end
+          
+          tree_data:add(F.DataString, data_string):set_generated()
+          local textdata_tvb=ByteArray.tvb(text_data, "Text data")
+          local text_data_tree = tree_data:add(F.TextData_Array, textdata_tvb())
+          text_data_tree:set_generated()
+
+        end
+
       end       -- end if DID
 
 
