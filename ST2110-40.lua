@@ -101,12 +101,20 @@ do
   F.Data_UnitId=ProtoField.uint8("st_2110_40.Data.Data_UnitId", "Data Unit Id", base.HEX, PES_DATA_UNIT_ID)
   F.Data_UnitLength=ProtoField.uint8("st_2110_40.Data.Data_UnitLength", "Data Unit Length", base.DEC)
 
+  -- Spec: ST RDD 08, aka OP-47 Subtitle Distribution Packet
+  F.SDP_Identifier = ProtoField.uint16("st_2210_40.Data.SDP_Identifier", "Identifier", base.HEX)
+  F.SDP_Length = ProtoField.uint8("st_2210_40.Data.SDP_Length", "Length", base.HEX)
+  F.SDP_FormatCode = ProtoField.uint8("st_2210_40.Data.SDP_FormatCode", "Format Code", base.HEX)
+  F.SDP_AdaptionHeader = ProtoField.bytes("st_2110_40.Data.SDP_AdaptionHeader","Adaption Header", base.SPACE)
+  F.SDP_PktDescB = ProtoField.bytes("st_2110_40.Data.SDP_PktDescB","Packet Descriptor B", base.SPACE)
+
   -- Spec: EN 300 472
   F.Field_Parity = ProtoField.bool("st_2110_40.Data.Field_Parity", "Field Parity", 8, {"First field of a frame", "Second field of a frame"}, 0x20)
   F.Line_Offset = ProtoField.uint8("st_2110_40.Data.Line_Offset", "Line Offset", base.DEC, nil, 0x1F)
 
   -- Spec: EN 300 706
-  F.Framing_Code = ProtoField.uint8("st_2110_40.Data.Framing_Code", "Framing Code", base.DEC, nil, 0xFF)
+  F.Clock_RunIn = ProtoField.uint16("st_2110_40.Data.Clock_RunIn","Clock Run-In", base.HEX, nil, 0XFFFF)
+  F.Framing_Code = ProtoField.uint8("st_2110_40.Data.Framing_Code", "Framing Code", base.HEX, nil, 0xFF)
   F.Magazine_Hamming = ProtoField.uint16("st_2110_40.Data.Magazine_Hamming", "Magazine (Hamming 8/4)", base.DEC, nil, 0xFC00)
   F.Magazine = ProtoField.uint8("st_2110_40.Data.Magazine", "Magazine", base.DEC, nil)
   F.PacketNumber_Hamming = ProtoField.uint16("st_2110_40.Data.PacketNumber_Hamming", "Packet Number (Hamming 8/4)", base.DEC, nil, 0x3FF)
@@ -260,7 +268,7 @@ do
   DID_SDID[0x41][0x0A]="Stereoscopic 3D Frame Compatible Packing and Signaling (ST 2068)"
   DID_SDID[0x41][0x0B]="Lip Sync data (ST 2064)"
   DID_SDID[0x43][0x01]="Structure of inter-station control data conveyed by ancillary data packets (ITU-R BT.1685)"
-  DID_SDID[0x43][0x02]="Subtitling Distribution packet (SDP) (RDD 8)"
+  DID_SDID[0x43][0x02]="Subtitling Distribution packet (SDP) (RDD 8, aka OP-47)"
   DID_SDID[0x43][0x03]="Transport of ANC packet in an ANC Multipacket (RDD 8)"
   DID_SDID[0x43][0x04]="Metadata to monitor errors of audio and video signals on a broadcasting chain ARIB http://www.arib.or.jp/english/html/overview/archives/br/8-TR-B29v1_0-E1.pdf (ARIB TR-B29)"
   DID_SDID[0x43][0x05]="Acquisition Metadata Sets for Video Camera Parameters (RDD18)"
@@ -306,6 +314,116 @@ do
   CC_TYPE[0xFE]="DTVCC Channel Packet Data"
   CC_TYPE[0xFF]="DTVCC Channel Packet Start"
   CC_TYPE[0xFA]="DTVCC Channel Packet Data Inactive"
+
+  -- Array of bit-flipped byte values used in processing OP-47 payloads:
+  local ReverseByte = {
+    0x00,0x80,0x40,0xc0,0x20,0xa0,0x60,0xe0,0x10,0x90,0x50,0xd0,0x30,0xb0,0x70,0xf0,
+    0x08,0x88,0x48,0xc8,0x28,0xa8,0x68,0xe8,0x18,0x98,0x58,0xd8,0x38,0xb8,0x78,0xf8,
+    0x04,0x84,0x44,0xc4,0x24,0xa4,0x64,0xe4,0x14,0x94,0x54,0xd4,0x34,0xb4,0x74,0xf4,
+    0x0c,0x8c,0x4c,0xcc,0x2c,0xac,0x6c,0xec,0x1c,0x9c,0x5c,0xdc,0x3c,0xbc,0x7c,0xfc,
+    0x02,0x82,0x42,0xc2,0x22,0xa2,0x62,0xe2,0x12,0x92,0x52,0xd2,0x32,0xb2,0x72,0xf2,
+    0x0a,0x8a,0x4a,0xca,0x2a,0xaa,0x6a,0xea,0x1a,0x9a,0x5a,0xda,0x3a,0xba,0x7a,0xfa,
+    0x06,0x86,0x46,0xc6,0x26,0xa6,0x66,0xe6,0x16,0x96,0x56,0xd6,0x36,0xb6,0x76,0xf6,
+    0x0e,0x8e,0x4e,0xce,0x2e,0xae,0x6e,0xee,0x1e,0x9e,0x5e,0xde,0x3e,0xbe,0x7e,0xfe,
+    0x01,0x81,0x41,0xc1,0x21,0xa1,0x61,0xe1,0x11,0x91,0x51,0xd1,0x31,0xb1,0x71,0xf1,
+    0x09,0x89,0x49,0xc9,0x29,0xa9,0x69,0xe9,0x19,0x99,0x59,0xd9,0x39,0xb9,0x79,0xf9,
+    0x05,0x85,0x45,0xc5,0x25,0xa5,0x65,0xe5,0x15,0x95,0x55,0xd5,0x35,0xb5,0x75,0xf5,
+    0x0d,0x8d,0x4d,0xcd,0x2d,0xad,0x6d,0xed,0x1d,0x9d,0x5d,0xdd,0x3d,0xbd,0x7d,0xfd,
+    0x03,0x83,0x43,0xc3,0x23,0xa3,0x63,0xe3,0x13,0x93,0x53,0xd3,0x33,0xb3,0x73,0xf3,
+    0x0b,0x8b,0x4b,0xcb,0x2b,0xab,0x6b,0xeb,0x1b,0x9b,0x5b,0xdb,0x3b,0xbb,0x7b,0xfb,
+    0x07,0x87,0x47,0xc7,0x27,0xa7,0x67,0xe7,0x17,0x97,0x57,0xd7,0x37,0xb7,0x77,0xf7,
+    0x0f,0x8f,0x4f,0xcf,0x2f,0xaf,0x6f,0xef,0x1f,0x9f,0x5f,0xdf,0x3f,0xbf,0x7f,0xff
+  }
+
+function ProcessWstPacket(inBuf, subtree)
+    local packet_address_tvb = inBuf(0, 2)
+    subtree:add(F.Magazine_Hamming, packet_address_tvb)
+    local magazine =  packet_address_tvb:bitfield(1,1) +
+                    2*packet_address_tvb:bitfield(3,1) +
+                    4*packet_address_tvb:bitfield(5,1)
+
+    -- Ref: EN 300 706, 3.1 Definitions
+    -- "magazine number 8:" and
+    -- "page number: M Pt Pu"
+    if (magazine == 0) then
+        magazine = 8
+    end
+
+    subtree:add(F.Magazine, magazine):set_generated()
+
+    subtree:add(F.PacketNumber_Hamming, packet_address_tvb)
+    local packet_number =    packet_address_tvb:bitfield( 7,1) +
+                           2*packet_address_tvb:bitfield( 9,1) +
+                           4*packet_address_tvb:bitfield(11,1) +
+                           8*packet_address_tvb:bitfield(13,1) +
+                          16*packet_address_tvb:bitfield(15,1)
+    subtree:add(F.PacketNumber, packet_number):set_generated()
+    local data_start_offset = 0
+    local number_of_data_bytes = 0
+    if (packet_number == 0) then
+      data_start_offset = 10
+      number_of_data_bytes = 32
+      -- Extracting Page Units and Page Tens
+      local page_units_hamming = inBuf(2, 1)
+      local page_units =  page_units_hamming:bitfield(1,1) +
+                        2*page_units_hamming:bitfield(3,1) +
+                        4*page_units_hamming:bitfield(5,1) +
+                        8*page_units_hamming:bitfield(7,1)
+
+      local page_tens_hamming = inBuf(3, 1)
+      local page_tens =   page_tens_hamming:bitfield(1,1) +
+                        2*page_tens_hamming:bitfield(3,1) +
+                        4*page_tens_hamming:bitfield(5,1) +
+                        8*page_tens_hamming:bitfield(7,1)
+      subtree:add(F.PageUnits_Hamming, page_units_hamming)
+      subtree:add(F.PageTens_Hamming, page_tens_hamming)
+      subtree:add(F.PageUnits, page_units):set_generated()
+      subtree:add(F.PageTens, page_tens):set_generated()
+
+      local ttPage = bit32.bor(
+          bit32.lshift(magazine, 8), bit32.lshift(page_tens, 4), page_units)
+      subtree:add("Control bits for TT Page " .. string.format("0x%x", ttPage) .. ":")
+
+      -- Control bytes
+      subtree:add(F.ErasePage,           inBuf(5,1))
+      subtree:add(F.Newsflash,           inBuf(7,1))
+      subtree:add(F.Subtitle,            inBuf(7,1))
+      subtree:add(F.SuppressHeader,      inBuf(8,1))
+      subtree:add(F.UpdateIndicator,     inBuf(8,1))
+      subtree:add(F.InterruptedSequence, inBuf(8,1))
+      subtree:add(F.InhibitDisplay,      inBuf(8,1))
+      subtree:add(F.MagazineSerial,      inBuf(9,1))
+      subtree:add(F.CharacterSet,        inBuf(9,1))
+
+    elseif (packet_number >= 1 and packet_number <=25) then
+      data_start_offset = 2
+      number_of_data_bytes = 40
+    end
+
+    local text_data=ByteArray.new()
+    text_data:set_size(number_of_data_bytes)
+
+    local data_string = ""
+    -- ETS 300 706, Page 26
+    for data_index=0,number_of_data_bytes-1 do
+      -- Getting rid of parity bit
+      local data_byte = inBuf(data_start_offset + data_index, 1)
+      local data_char =    data_byte:bitfield(0,1) +
+                         2*data_byte:bitfield(1,1) +
+                         4*data_byte:bitfield(2,1) +
+                         8*data_byte:bitfield(3,1) +
+                        16*data_byte:bitfield(4,1) +
+                        32*data_byte:bitfield(5,1) +
+                        64*data_byte:bitfield(6,1)
+      text_data:set_index(data_index, data_char)
+      data_string = data_string .. string.char(data_char)
+    end
+
+    subtree:add(F.DataString, data_string):set_generated()
+    local textdata_tvb=ByteArray.tvb(text_data, "Text data")
+    local text_data_tree = subtree:add(F.TextData_Array, textdata_tvb())
+    text_data_tree:set_generated()
+end -- function ProcessWstPacket()
 
 dprint = function(...)
     print(table.concat({"Lua:", ...}," "))
@@ -668,86 +786,59 @@ end
           tree_data:add(F.Field_Parity, ntvb(3, 1))
           tree_data:add(F.Line_Offset, ntvb(3, 1))
           tree_data:add(F.Framing_Code, ntvb(4, 1))
-          --Checkpoint: In this code Packet Address starts with byte indexed 5
-          --In the Spec it starts from byte 4.
-          --So in order to find out what index to use here, take index from Spec + 1
-          local packet_address_tvb = ntvb(5, 2)
-          tree_data:add(F.Magazine_Hamming, packet_address_tvb)
-          local magazine = packet_address_tvb:bitfield(1,1) +
-                          2*packet_address_tvb:bitfield(3,1) +
-                          4*packet_address_tvb:bitfield(5,1)
-          tree_data:add(F.Magazine, magazine):set_generated()
 
-          tree_data:add(F.PacketNumber_Hamming, packet_address_tvb)
-          local packet_number = packet_address_tvb:bitfield(7,1) +
-                                2*packet_address_tvb:bitfield(9,1) + 
-                                4*packet_address_tvb:bitfield(11,1) +
-                                8*packet_address_tvb:bitfield(13,1) + 
-                                16*packet_address_tvb:bitfield(15,1)
-          tree_data:add(F.PacketNumber, packet_number):set_generated()
-          local data_start_offset = 0
-          local number_of_data_bytes = 0
-          if (packet_number == 0) then
-            data_start_offset = 15
-            number_of_data_bytes = 32
-            -- Extracting Page Units and Page Tens
-            local page_units_hamming = ntvb(7, 1)
-            local page_units = page_units_hamming:bitfield(1,1) +
-                              2*page_units_hamming:bitfield(3,1) +
-                              4*page_units_hamming:bitfield(5,1) +
-                              8*page_units_hamming:bitfield(7,1)
-
-            local page_tens_hamming = ntvb(8, 1)
-            local page_tens = page_tens_hamming:bitfield(1,1) +
-                              2*page_tens_hamming:bitfield(3,1) +
-                              4*page_tens_hamming:bitfield(5,1) +
-                              8*page_tens_hamming:bitfield(7,1)
-            tree_data:add(F.PageUnits_Hamming, page_units_hamming)
-            tree_data:add(F.PageTens_Hamming, page_tens_hamming)
-            tree_data:add(F.PageUnits, page_units):set_generated()
-            tree_data:add(F.PageTens, page_tens):set_generated()
-
-            -- Control bytes
-            tree_data:add(F.ErasePage, ntvb(10,1))
-            tree_data:add(F.Newsflash, ntvb(12,1))
-            tree_data:add(F.Subtitle, ntvb(12,1))
-            tree_data:add(F.SuppressHeader, ntvb(13,1))
-            tree_data:add(F.UpdateIndicator, ntvb(13,1))
-            tree_data:add(F.InterruptedSequence, ntvb(13,1))
-            tree_data:add(F.InhibitDisplay, ntvb(13,1))
-            tree_data:add(F.MagazineSerial, ntvb(14,1))
-            tree_data:add(F.CharacterSet, ntvb(14,1))
-
-          elseif (packet_number >= 1 and packet_number <=25) then
-            data_start_offset = 7
-            number_of_data_bytes = 40
-          end
-
-          local text_data=ByteArray.new()
-          text_data:set_size(number_of_data_bytes)
-          
-          local data_string = ""
-          -- ETS 300 706, Page 26
-          for data_index=0,number_of_data_bytes-1 do
-            -- Getting rid of parity bit
-            local data_byte = ntvb(data_start_offset + data_index, 1)
-            local data_char = data_byte:bitfield(0,1) + 
-                                      2*data_byte:bitfield(1,1) + 
-                                      4*data_byte:bitfield(2,1) + 
-                                      8*data_byte:bitfield(3,1) + 
-                                      16*data_byte:bitfield(4,1) + 
-                                      32*data_byte:bitfield(5,1) + 
-                                      64*data_byte:bitfield(6,1)
-            text_data:set_index(data_index, data_char)
-            data_string = data_string .. string.char(data_char)
-          end
-          
-          tree_data:add(F.DataString, data_string):set_generated()
-          local textdata_tvb=ByteArray.tvb(text_data, "Text data")
-          local text_data_tree = tree_data:add(F.TextData_Array, textdata_tvb())
-          text_data_tree:set_generated()
+          -- Process EN 301 775 Section 4.5.2 txt_data_block():
+          ProcessWstPacket(ntvb(5, 42), tree_data)
 
         end
+
+      elseif ( DID == 0x43 and SDID == 0x02 ) then
+        tree_data:add(F.SDP_Identifier, ntvb(0, 2))
+        tree_data:add(F.SDP_Length, ntvb(2, 1))
+        tree_data:add(F.SDP_FormatCode, ntvb(3, 1))
+        local formatCode = ntvb(3, 1):uint()
+
+        -- '0x02' ==> WST teletext subtitles
+        if (formatCode == 0x02) then
+          tree_data:add(F.SDP_AdaptionHeader, ntvb(4, 5)):set_generated()
+
+          -- Offsets to Packet Descriptor Structures A and B
+          local offsetA = 4
+          local offsetB = 9
+          for i=1, 5 do -- OP-47 can carry up to five WST Packets per VANC packet.
+            local pktDescA = ntvb(offsetA,1):uint()
+            if (pktDescA == 0) then
+              break -- Per OP-47 5.4.2, no more WSTs to parse
+            end
+
+            local isField1 = ntvb(offsetA,1):bitfield(0,1) -- b7    => VBI field flag
+            local lineNum = ntvb(offsetA,1):bitfield(3,5)  -- b4..0 => VBI line number
+            local tree_wst = tree_data:add(F.SDP_PktDescB, ntvb(offsetB, 45)):set_generated()
+            tree_wst:add(F.Clock_RunIn, ntvb(offsetB,2)):set_generated()
+            tree_wst:add(F.Framing_Code, ntvb(offsetB+2,1)):set_generated()
+
+            -- NB: The bit ordering of WST payload bytes carried in OP-47 is
+            -- the reverse of EN 300 706, which uses VBI transmission order.
+            -- Starting with the Magazine and Row Address Group, reverse the
+            -- bits in the remaining 42 WST payload bytes, and then process
+            -- per EN 300 706.
+            -- (Note that ByteArray uses 0-based indexing, whereas lua arrays
+            --  are 1-based, hence use of 'byte+1'.)
+            local bitFlippedData = ByteArray.new()
+            bitFlippedData:set_size(42)
+            for i=0,41 do
+              local byte = ntvb(offsetB+3+i, 1):uint()
+              local reversed = ReverseByte[bit32.band(byte+1, 0xff)]
+              bitFlippedData:set_index(i, reversed)
+            end
+
+            ProcessWstPacket(bitFlippedData:tvb(wst), tree_wst)
+
+            offsetA = offsetA + 1  -- increment to next A descriptor
+            offsetB = offsetB + 45 -- increment to next corresponding payload
+          end -- for i=1, 5
+
+        end -- if (formatCode == 0x02)
 
       end       -- end if DID
 
