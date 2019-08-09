@@ -335,22 +335,36 @@ do
     0x0f,0x8f,0x4f,0xcf,0x2f,0xaf,0x6f,0xef,0x1f,0x9f,0x5f,0xdf,0x3f,0xbf,0x7f,0xff
   }
 
-function ProcessWstPacket(inBuf, subtree)
+  -- 
+  -- ProcessWstPacket()
+  --
+  --  parameters:
+  --  o inBuf   - Assumed to a be buffer of 42 bytes of WST information, starting
+  --              with the MRAG (Magazine and Row Address Group).  Bits in the
+  --              payload bytes are assumed to be in VBI transmission order.
+  --  o subtree - dissection tree that display items should be added to.
+  --
+  -- Routine to process World System Teletext packets, and add results to the given
+  -- dissection tree.
+  --
+  function ProcessWstPacket(inBuf, subtree)
     local packet_address_tvb = inBuf(0, 2)
+
+    -- extract Magazine number
     subtree:add(F.Magazine_Hamming, packet_address_tvb)
     local magazine =  packet_address_tvb:bitfield(1,1) +
                     2*packet_address_tvb:bitfield(3,1) +
                     4*packet_address_tvb:bitfield(5,1)
 
-    -- Ref: EN 300 706, 3.1 Definitions
-    -- "magazine number 8:" and
-    -- "page number: M Pt Pu"
+    -- Reference: ETSI EN 300 706 v1.2.1, 3.1 Definitions
+    -- "magazine number 8:" and "page number: M Pt Pu"
     if (magazine == 0) then
         magazine = 8
     end
 
     subtree:add(F.Magazine, magazine):set_generated()
 
+    -- extract Packet number
     subtree:add(F.PacketNumber_Hamming, packet_address_tvb)
     local packet_number =    packet_address_tvb:bitfield( 7,1) +
                            2*packet_address_tvb:bitfield( 9,1) +
@@ -360,6 +374,8 @@ function ProcessWstPacket(inBuf, subtree)
     subtree:add(F.PacketNumber, packet_number):set_generated()
     local data_start_offset = 0
     local number_of_data_bytes = 0
+
+    -- Packet number 0 is a Page Header
     if (packet_number == 0) then
       data_start_offset = 10
       number_of_data_bytes = 32
@@ -395,6 +411,7 @@ function ProcessWstPacket(inBuf, subtree)
       subtree:add(F.MagazineSerial,      inBuf(9,1))
       subtree:add(F.CharacterSet,        inBuf(9,1))
 
+    -- packet numbers between 1 and 25 contain data
     elseif (packet_number >= 1 and packet_number <=25) then
       data_start_offset = 2
       number_of_data_bytes = 40
@@ -403,8 +420,8 @@ function ProcessWstPacket(inBuf, subtree)
     local text_data=ByteArray.new()
     text_data:set_size(number_of_data_bytes)
 
+    -- Reference: ETSI EN 300 706, section 9.3.1.4 and 9.3.2
     local data_string = ""
-    -- ETS 300 706, Page 26
     for data_index=0,number_of_data_bytes-1 do
       -- Getting rid of parity bit
       local data_byte = inBuf(data_start_offset + data_index, 1)
@@ -423,7 +440,7 @@ function ProcessWstPacket(inBuf, subtree)
     local textdata_tvb=ByteArray.tvb(text_data, "Text data")
     local text_data_tree = subtree:add(F.TextData_Array, textdata_tvb())
     text_data_tree:set_generated()
-end -- function ProcessWstPacket()
+  end -- function ProcessWstPacket()
 
 dprint = function(...)
     print(table.concat({"Lua:", ...}," "))
@@ -776,6 +793,11 @@ end
             s=s+1
           end   -- end if CDPSection = 0x72
         end     -- end for CDP Section
+
+      --
+      -- Parsing EBU Teletext data in VANC space (ST 2031)
+      -- DID=0x41 and SDID=0x08
+      --
       elseif ( DID==0x41 and SDID==0x08 ) then
         tree_data:add(F.Data_Identifier, ntvb(0, 1))
         tree_data:add(F.Data_UnitId, ntvb(1, 1))
@@ -792,6 +814,11 @@ end
 
         end
 
+      --
+      -- Parsing Subtitling Distribution Packets in VANC space (ST RDD-8)
+      --  (Free TV Australia Operational Practice OP-47)
+      -- DID=0x43 and SDID=0x02
+      --
       elseif ( DID == 0x43 and SDID == 0x02 ) then
         tree_data:add(F.SDP_Identifier, ntvb(0, 2))
         tree_data:add(F.SDP_Length, ntvb(2, 1))
@@ -822,7 +849,7 @@ end
             -- Starting with the Magazine and Row Address Group, reverse the
             -- bits in the remaining 42 WST payload bytes, and then process
             -- per EN 300 706.
-            -- (Note that ByteArray uses 0-based indexing, whereas lua arrays
+            -- (Note that ByteArray uses 0-based indexing, whereas Lua arrays
             --  are 1-based, hence use of 'byte+1'.)
             local bitFlippedData = ByteArray.new()
             bitFlippedData:set_size(42)
