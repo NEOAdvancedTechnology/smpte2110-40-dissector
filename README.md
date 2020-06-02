@@ -24,11 +24,13 @@ to use in Wireshark:
 7) You can extract the Closed Captionning Data with the script parse_CC.sh.
 The utility tshark has to be installed.
 The script extracts with tshark the CC Data from a pcap file and concatenates
-them into an output file or in the standard output.
+them into an output file:
 
 ```
 ./parse_CC.sh --in=<PCAP_FILE> --out=<CC_DATA_EXTRACTED_FILE>
-or
+```
+or to output in stdout
+```
 ./parse_CC.sh --in=<PCAP_FILE> -v
 ```
 
