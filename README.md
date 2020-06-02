@@ -29,7 +29,7 @@ them into an output file:
 ```
 ./parse_CC.sh --in=<PCAP_FILE> --out=<CC_DATA_EXTRACTED_FILE>
 ```
-or to output in stdout
+or to output in stdout:
 ```
 ./parse_CC.sh --in=<PCAP_FILE> -v
 ```
