@@ -125,8 +125,18 @@ do
   F.PageTens_Hamming = ProtoField.uint8("st_2110_40.Data.PageTens_Hamming", "Page Tens (Hamming 8/4)", base.HEX, nil, 0xFF)
   F.PageTens = ProtoField.uint8("st_2110_40.Data.PageTens", "Page Tens", base.HEX, nil)
 
-  F.DataString = ProtoField.string("st_2110_40.Data.Data_String", "Data String")
-  F.TextData_Array = ProtoField.bytes("st_2110_40.Data.Textdata","Text Data", base.SPACE)
+  F.DataString = ProtoField.string("st_2110_40.Data.DataString", "Data String")
+  F.DataBytes_Array = ProtoField.bytes("st_2110_40.Data.DataBytes","Data Bytes", base.SPACE)
+
+  F.Designation_Code_Hamming = ProtoField.uint8("st_2110_40.Data.Designation_Code_Hamming", "Designation Code (Hamming 8/4)", base.HEX, nil, 0xFF)
+  F.Designation_Code = ProtoField.uint8("st_2110_40.Data.Designation_Code", "Designation Code", base.DEC, nil)
+  F.Triplet_Hamming = ProtoField.uint32("st_2110_40.Data.Triplet_Hamming", "Triplet (Hamming 24/18)", base.HEX, nil, 0xFFFFFF)
+  F.Triplet_DataBits = ProtoField.uint32("st_2110_40.Data.Triplet_DataBits", "Triplet Data Bits", base.HEX, nil, 0x2EFEFE)
+  F.Triplet_Address = ProtoField.uint8("st_2110_40.Data.Triplet_Address", "Address", base.DEC, nil, 0x3F)
+  F.Triplet_Address_Col = ProtoField.uint8("st_2110_40.Data.Triplet_Address_Col", "Column", base.DEC, nil)
+  F.Triplet_Address_Row = ProtoField.uint8("st_2110_40.Data.Triplet_Address_Row", "Row", base.DEC, nil)
+  F.Triplet_Mode = ProtoField.uint8("st_2110_40.Data.Triplet_Mode", "Mode", base.HEX, nil, 0x1F)
+  F.Triplet_Data = ProtoField.uint8("st_2110_40.Data.Triplet_Data", "Data", base.HEX, nil, 0x7F)
 
   local NATIONAL_SUBSET = {
     [0] = "English",
@@ -411,14 +421,71 @@ do
       subtree:add(F.MagazineSerial,      inBuf(9,1))
       subtree:add(F.CharacterSet,        inBuf(9,1))
 
-    -- packet numbers between 1 and 25 contain data
+    -- Packet numbers between 1 and 25 contain "basic" data
     elseif (packet_number >= 1 and packet_number <=25) then
       data_start_offset = 2
       number_of_data_bytes = 40
+
+    -- Packet number 26 carries page enhancement data (Section 9.4)
+    elseif (packet_number == 26) then
+      local designation_code_hamming = inBuf(2, 1)
+      local designation_code = ( designation_code_hamming:bitfield(1,1) +
+                                 2*designation_code_hamming:bitfield(3,1) +
+                                 4*designation_code_hamming:bitfield(5,1) +
+                                 8*designation_code_hamming:bitfield(7,1) )
+      subtree:add(F.Designation_Code_Hamming, designation_code_hamming)
+      subtree:add(F.Designation_Code, designation_code):set_generated()
+
+      -- Section 9.4, 13 triplets (39 bytes) remain in the packet payload
+      -- Section 8.3, Hamming 24/18 data bits are 3,5..7,9..15,17..23
+      triplets_start_offset = 3
+      for triplet_index=0,12 do
+        local triplet = inBuf(triplets_start_offset + triplet_index*3, 3)
+        subtree:add(F.Triplet_Hamming, triplet)
+
+        -- Section 12.3, address bits 6..1 are triple bits 3,5,6,7,9,10
+        local address = (   triplet:bitfield(2,1) +
+                          2*triplet:bitfield(4,1) +
+                          4*triplet:bitfield(5,1) +
+                          8*triplet:bitfield(6,1) +
+                         16*triplet:bitfield(8,1) +
+                         32*triplet:bitfield(9,1) )
+        -- Section 12.3, mode bits 11..7 are triple bits 11,12,13,14,15
+        local mode = (   triplet:bitfield(10,1) +
+                       2*triplet:bitfield(11,1) +
+                       4*triplet:bitfield(12,1) +
+                       8*triplet:bitfield(13,1) +
+                      16*triplet:bitfield(14,1) )
+        -- Section 12.3, data bits 18..12 are triple bits 17,18,19,20,21,22,23
+        local data = (   triplet:bitfield(16,1) +
+                       2*triplet:bitfield(17,1) +
+                       4*triplet:bitfield(18,1) +
+                       8*triplet:bitfield(19,1) +
+                      16*triplet:bitfield(20,1) +
+                      32*triplet:bitfield(21,1) +
+                      64*triplet:bitfield(22,1) )
+
+        -- Column / Row Address Group (mapping described in Section 12.3.2)
+        if (address >= 0) and (address <= 39) then
+          subtree:add(F.Triplet_Address_Col, address):set_generated()
+        elseif (address >= 40) and (address <= 63) then
+          local row = address-40
+          if (row == 0) then row = 24 end
+          subtree:add(F.Triplet_Address_Row, row):set_generated()
+        else -- Invalid value?
+          subtree:add(F.Triplet_Address, address):set_generated()
+        end
+
+        subtree:add(F.Triplet_Mode, mode):set_generated()
+        subtree:add(F.Triplet_Data, data):set_generated()
+      end
+
+      -- Early return for X/26, since we've already processed contents
+      return
     end
 
-    local text_data=ByteArray.new()
-    text_data:set_size(number_of_data_bytes)
+    local data_bytes=ByteArray.new()
+    data_bytes:set_size(number_of_data_bytes)
 
     -- Reference: ETSI EN 300 706, section 9.3.1.4 and 9.3.2
     local data_string = ""
@@ -432,14 +499,14 @@ do
                         16*data_byte:bitfield(4,1) +
                         32*data_byte:bitfield(5,1) +
                         64*data_byte:bitfield(6,1)
-      text_data:set_index(data_index, data_char)
+      data_bytes:set_index(data_index, data_char)
       data_string = data_string .. string.char(data_char)
     end
 
     subtree:add(F.DataString, data_string):set_generated()
-    local textdata_tvb=ByteArray.tvb(text_data, "Text data")
-    local text_data_tree = subtree:add(F.TextData_Array, textdata_tvb())
-    text_data_tree:set_generated()
+    local databytes_tvb=ByteArray.tvb(data_bytes, "data bytes")
+    local data_bytes_tree = subtree:add(F.DataBytes_Array, databytes_tvb())
+    data_bytes_tree:set_generated()
   end -- function ProcessWstPacket()
 
 dprint = function(...)
