@@ -855,7 +855,9 @@ end
             bitFlippedData:set_size(42)
             for i=0,41 do
               local byte = ntvb(offsetB+3+i, 1):uint()
-              local reversed = ReverseByte[bit32.band(byte+1, 0xff)]
+              if (byte >= 255) then byte = 0 end
+              byte = byte+1
+              local reversed = ReverseByte[byte]
               bitFlippedData:set_index(i, reversed)
             end
 
